@@ -1,6 +1,6 @@
 """Interfejs wiersza poleceń: input/<sprawa>/*.pdf -> output/<sprawa>/<nazwa>.json.
 
-Dokument nierozpoznany jako żadna klasa (np. ogłoszenie TED) nie dostaje pliku JSON.
+Dokument nierozpoznany jako żadna klasa (np. ogłoszenie TED) dostaje pusty plik JSON: {}.
 Ślad ekstrakcji (klasa, wyniki klasyfikacji, odpowiedź modelu, źródło i status każdego pola)
 trafia do katalogu trace/, a nie do output/. Dla każdej sprawy powstaje też
 trace/<sprawa>/do_sprawdzenia.json: pola odrzucone przez weryfikację (z proponowaną wartością)
