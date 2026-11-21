@@ -40,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--visual-reader", choices=("off", "on"), default=os.environ.get("O2J_VISUAL_READER", "off"),
                     help="czytelnik wizualny: drugi odczyt wycinków linii skanu modelem z projektorem obrazu "
                          "(wymaga pliku --mmproj); potwierdza albo wetuje wartości o nie-wysokiej pewności")
+    ap.add_argument("--final-check", choices=("off", "note", "veto"), default=os.environ.get("O2J_FINAL_CHECK", "off"),
+                    help="końcowa ocena modelem pól z opcją `check` w YAML (pytanie TAK/NIE: czy wartość jest tym, czym "
+                         "ma być): note = odpowiedź NIE dopisuje pole do listy do sprawdzenia, veto = dodatkowo zeruje pole")
     ap.add_argument("--mmproj", default=os.environ.get("O2J_MMPROJ", str(APP_ROOT / "models" / "mmproj-F16.gguf")))
     ap.add_argument("--resume", action="store_true",
                     help="pomiń dokumenty, które mają już wynik w katalogu output (wznowienie przerwanego przebiegu)")
@@ -70,14 +73,18 @@ def main(argv: list[str] | None = None) -> int:
                   "nieczytelne_linie": sum(p.unreadable for p in doc.pages),
                   "czas_wczytania_s": round(time.perf_counter() - t0, 2)}
         if cls_name is None:
-            print(f"  {rel}: pominięty (dokument spoza klas) {scores}", flush=True)
+            # Wymóg organizatora (README, 21.11): dokument spoza klas dostaje pusty plik JSON.
+            out_path = args.output / rel
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text("{}", encoding="utf-8")
+            print(f"  {rel}: dokument spoza klas -> pusty JSON {scores}", flush=True)
             write_trace(args.trace, rel, record)
         else:
             jobs.append((cls_name, rel, doc, record))
     print(f"Wczytano i sklasyfikowano w {time.perf_counter() - t_all:.0f} s; do ekstrakcji: {len(jobs)}", flush=True)
 
     # Etap 2: ekstrakcja pogrupowana klasami - stała część promptu zostaje w cache modelu.
-    extractor = Extractor(make_backend(args.model, args.threads))
+    extractor = Extractor(make_backend(args.model, args.threads), final_check=args.final_check)
     print(f"Model: {extractor.backend.name}", flush=True)
     if args.visual_reader == "on":
         if not hasattr(extractor.backend, "enable_vision") or not Path(args.mmproj).is_file():

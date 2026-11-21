@@ -13,11 +13,11 @@ import json
 import random
 from pathlib import Path
 
-# Nazwa PDF w danych treningowych -> (klasa, nazwa pliku gold)
+# Klasa -> nazwy PDF używane w kolejnych wydaniach danych UZP.
 TRAIN_FILES = {
-    "odwolanie.pdf": ("odwolanie", "odwolanie.json"),
-    "pelnomocnictwo.pdf": ("pelnomocnictwo", "pelnomocnictwo.json"),
-    "potwierdzenie_przelewu.pdf": ("przelew", "przelew.json"),
+    "odwolanie": ("odwolanie.pdf",),
+    "pelnomocnictwo": ("pelnomocnictwo.pdf",),
+    "przelew": ("przelew.pdf", "potwierdzenie_przelewu.pdf"),
 }
 HOLDOUT_SIZE = 12
 SEED = 20261121
@@ -30,15 +30,18 @@ def main() -> int:
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
 
-    cases = sorted(p for p in (args.uzp / "dane").iterdir() if p.is_dir())
+    cases = sorted(p for p in (args.uzp / "dane").glob("przyklad_*") if p.is_dir())
     holdout = set(random.Random(SEED).sample([c.name for c in cases], HOLDOUT_SIZE))
     manifest = []
     for case in cases:
-        for pdf, (cls, gold) in TRAIN_FILES.items():
+        for cls, names in TRAIN_FILES.items():
+            matches = [case / name for name in names if (case / name).is_file()]
+            if len(matches) != 1:
+                raise ValueError(f"{case.name}: oczekiwano jednego PDF klasy {cls}, znaleziono {len(matches)}")
             manifest.append({
                 "case": case.name,
-                "pdf": str((case / pdf).resolve()),
-                "gold": str((case / gold).resolve()),
+                "pdf": str(matches[0].resolve()),
+                "gold": str((case / f"{cls}.json").resolve()),
                 "cls": cls,
                 "split": "holdout" if case.name in holdout else "dev",
             })

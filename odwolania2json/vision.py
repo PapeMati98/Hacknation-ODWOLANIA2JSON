@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 
-from .textmatch import dates_in_text
+from .textmatch import dates_in_text, occurrences
 from .validators import norm_date
 
 MAX_CROPS = 12             # limit wycinków na dokument
@@ -22,7 +22,8 @@ DARK_LEVEL = 30            # jasność (0-255), poniżej której piksel liczymy 
 DARK_SHARE = 0.28          # próg P: udział czarnych pikseli w wycinku, od którego linię uznajemy za zakrytą (skalibrowany:
                            # linie pogrubione dochodzą do 18%, linie z prostokątem zaczynają się od 39% - tools/gate_visual.py)
 LEVELS = ("niska", "srednia", "wysoka")
-NUMERIC_KINDS = {"nip", "regon", "pesel", "nrb", "krs", "amount", "bzp", "ted"}
+NUMERIC_KINDS = {"nip", "regon", "pesel", "nrb", "krs", "amount"}    # numery ogłoszeń (litery w środku) idą jak tekst
+CROP_DPI = 300             # wycinek dla czytelnika renderujemy gęściej niż stronę dla OCR
 PROMPT = "Przepisz dokładnie tekst widoczny na obrazie. Podaj wyłącznie ten tekst, bez komentarza."
 
 _SEPARATORS = " .-/"
@@ -86,13 +87,51 @@ def judge(kind: str, value: str, read: str) -> str:
     want, got = _words(value), _words(read)
     if not want:
         return "niezwiazane"
-    spans = [got[i: i + len(want)] for i in range(len(got) - len(want) + 1)]
-    if want in spans:
-        return "zgodne"
+    # Odstępy wewnątrz wartości nie mają znaczenia („2025/BZP 00270698” = „2025/BZP00270698”), ale ciąg musi
+    # zaczynać się i kończyć na granicy wyrazu odczytu.
     from difflib import SequenceMatcher
-    target = " ".join(want)
-    similar = max((SequenceMatcher(None, target, " ".join(span)).ratio() for span in spans), default=0.0)
+    target, similar = "".join(want), 0.0
+    for i in range(len(got)):
+        joined = ""
+        for word in got[i:]:
+            joined += word
+            if joined == target:
+                return "zgodne"
+            if len(joined) >= 0.7 * len(target):
+                similar = max(similar, SequenceMatcher(None, target, joined).ratio())
+            if len(joined) > 1.6 * len(target):
+                break
     return "inne" if similar >= 0.6 else "niezwiazane"
+
+
+def value_span(line_text: str, kind: str, value: str) -> tuple[float, float] | None:
+    """Część szerokości linii (0..1), w której stoi wartość - z zapasem po obu stronach. None = cała linia.
+
+    Położenie szacujemy z pozycji znaków w tekście linii (czcionka bywa proporcjonalna, stąd zapas). Krótki
+    wycinek wokół wartości jest czytany szybciej i dokładniej niż długa linia w całości.
+    """
+    n = len(line_text)
+    start = end = None
+    if kind == "date":
+        hits = occurrences(norm_date(value).value or value, line_text, norm_date)
+        if hits:
+            start = line_text.find(hits[0][1])
+            end = start + len(hits[0][1])
+    if start is None or start < 0:
+        marks = [(i, ch.lower()) for i, ch in enumerate(line_text) if ch.isalnum()]
+        compact, want = "".join(ch for _, ch in marks), "".join(ch.lower() for ch in value if ch.isalnum())
+        at = compact.find(want) if want else -1
+        if at < 0:
+            return None
+        start, end = marks[at][0], marks[at + len(want) - 1][0] + 1
+    pad = max(6, int(0.15 * n))
+    left, right = max(0, start - pad) / n, min(n, end + pad) / n
+    return None if right - left > 0.8 else (left, right)
+
+
+def value_crop(doc, line, kind: str, value: str):
+    """Wycinek dla czytelnika: okolica wartości w jej linii."""
+    return doc.crop(line, dpi=CROP_DPI, span=value_span(line.text, kind, value))
 
 
 def dark_share(image) -> float:
@@ -127,7 +166,7 @@ class VisualReader:
             return "pominiete", "brak ramki linii"
         if self._used.get(doc.path, 0) >= self.max_crops:
             return "pominiete", "limit wycinków na dokument"
-        crop = doc.crop(line)
+        crop = value_crop(doc, line, kind, value)
         if crop is None:
             return "pominiete", "brak wycinka"
         share = dark_share(crop)

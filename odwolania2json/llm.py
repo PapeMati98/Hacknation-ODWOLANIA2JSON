@@ -36,6 +36,7 @@ class LlamaCppBackend:
         self.n_ctx = n_ctx
         self._n_past = 0
         self._cache: tuple[str, object, int, int] | None = None   # (stała część, bufor stanu, rozmiar, n_past)
+        self._say_tokens: list[int] | None = None                 # tokeny ostatniego krótkiego pytania (wspólny początek)
         self._stop = {self.llm.token_eos()} | set(self._tok("<|im_end|>")) | set(self._tok("<|endoftext|>"))
         self.last_stats: dict = {}
 
@@ -52,10 +53,15 @@ class LlamaCppBackend:
         buf = io.BytesIO()
         image.save(buf, format="PNG")
         uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
-        out = self._vision(llama=self.llm, temperature=0.0, max_tokens=max_tokens, messages=[
-            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": uri}}, {"type": "text", "text": prompt}]}])
+        from llama_cpp._utils import suppress_stdout_stderr
+        with suppress_stdout_stderr(disable=False):      # biblioteka obrazu wypisuje dziennik na stderr
+            out = self._vision(llama=self.llm, temperature=0.0, max_tokens=max_tokens, messages=[
+                {"role": "user", "content": [{"type": "image_url", "image_url": {"url": uri}}, {"type": "text", "text": prompt}]}])
         text = out["choices"][0]["message"]["content"] or ""
-        return re.sub(r"<think>.*?(</think>|\Z)", "", text, flags=re.DOTALL).strip()
+        text = re.sub(r"<think>.*?(</think>|\Z)", "", text, flags=re.DOTALL).strip()
+        if out["choices"][0].get("finish_reason") == "length" and " " in text:
+            text = text.rsplit(None, 1)[0]              # odczyt urwany limitem: ostatni wyraz jest niepełny
+        return text
 
     # ------------------------------------------------------------- niskopoziomowe operacje na kontekście
     def _tok(self, text: str, bos: bool = False) -> list[int]:
@@ -107,11 +113,39 @@ class LlamaCppBackend:
             self.last_stats["wygenerowane"] += 1
         return buf.decode("utf-8", errors="ignore").strip(), ""
 
+    def say(self, prompt: str, max_tokens: int = 48) -> str:
+        """Krótka odpowiedź (jedna linia, zachłannie) na gotowy prompt - do końcowej walidacji wartości."""
+        stats = self.last_stats
+        tokens, kept = self._tok(prompt, bos=True), 0
+        if self._say_tokens is not None:          # kolejne pytania mają wspólny początek - czytamy tylko różnicę
+            for a, b in zip(self._say_tokens, tokens):
+                if a != b:
+                    break
+                kept += 1
+            kept = min(kept, len(tokens) - 1)
+        if kept and self.llm._ctx.kv_cache_seq_rm(-1, kept, -1):
+            self._n_past = kept
+        else:
+            kept = 0
+            self._reset()
+        self._feed(tokens[kept:])
+        self._say_tokens = tokens
+        self.last_stats = {"wygenerowane": 0}
+        text, _ = self._line(max_tokens)
+        self.last_stats = stats
+        return text.strip().strip("«»")
+
     # ------------------------------------------------------------- prowadzone wypełnianie formularza
     def fill(self, system: str, static_user: str, doc_text: str, sections: list[tuple[str, bool, list[str]]],
-             max_value_tokens: int = 200, max_items: int = 8) -> str:
-        """Wypełnia formularz: sections = [(nazwa sekcji, czy lista, [klucze])]. Zwraca tekst formularza."""
+             max_value_tokens: int = 200, max_items: int = 8, signed: frozenset[str] = frozenset(),
+             min_items: dict[str, int] | None = None) -> str:
+        """Wypełnia formularz: sections = [(nazwa sekcji, czy lista, [klucze])]. Zwraca tekst formularza.
+
+        `signed` - klucze, których wartość może zaczynać się od minusa (kwoty): dla nich sam znak „-”
+        na początku nie jest jeszcze pustą wartością.
+        """
         t0 = time.perf_counter()
+        self._say_tokens = None
         self.last_stats = {"wygenerowane": 0, "stan_z_pamieci": False}
         static = f"<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{static_user}"
         tail = self._tok("<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n")
@@ -153,7 +187,7 @@ class LlamaCppBackend:
             nonlocal pending, bol
             force(f"{key}:")
             flush()
-            value, deferred = self._line(max_value_tokens, dash_shortcut=True)
+            value, deferred = self._line(max_value_tokens, dash_shortcut=key not in signed)
             pending += deferred
             lines.append(f"{key}: {value}")
             return value
@@ -197,6 +231,11 @@ class LlamaCppBackend:
                 items.append(current)
                 if not is_list or index >= max_items:
                     break
+                if index < (min_items or {}).get(name, 0):
+                    # Z tekstu wynika, że podmiotów jest więcej (reguła listy z YAML): kolejny element jest
+                    # wymuszony. Pusty albo powtórzony element i tak zostanie odrzucony wyżej.
+                    index += 1
+                    continue
                 # Czy dokument zawiera kolejny podmiot tej sekcji? Model sam zaczyna następną linię.
                 newline()
                 flush()

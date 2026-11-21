@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from .config import DocClass, Section, is_leaf
 from .crosscheck import apply_field_rules, resolve_duplicates
 from .pdfio import ALT_DPIS, REDACTED, UNREADABLE, Document
-from .textmatch import (ID_LENGTHS, _compact, appears_in, dates_in_text, digits_in_text, fold, occurrences, person_in,
+from .textmatch import (DATE_PATTERNS, ID_LENGTHS, _compact, appears_in, dates_in_text, digits_in_text, fold, majority_spelling,
+                        occurrences, person_in, restore_known,
                         second_read,
                         snap_digits, snap_span, snap_text, words_in)
 from .validators import VALIDATORS, digits_from_ocr, norm_date
@@ -49,20 +50,28 @@ class Result:
 
 
 # ---------------------------------------------------------------- klasyfikacja
+_PLAIN = str.maketrans("ąćęłńóśźż", "acelnoszz")
+
+
+def plain(s: str) -> str:
+    """Tekst do porównań klasyfikatora: bez wielkości liter i polskich znaków (OCR często je gubi)."""
+    return fold(s).translate(_PLAIN)
+
+
 def classify(doc: Document, classes: list[DocClass]) -> tuple[str | None, dict[str, float]]:
-    text = fold(doc.text(max_pages=2))
+    text = plain(doc.text(max_pages=2))
     flat = re.sub(r"\s", "", text)
-    head = re.sub(r"\s", "", fold(doc.pages[0].text if doc.pages else ""))[:250]
+    head = re.sub(r"\s", "", plain(doc.pages[0].text if doc.pages else ""))[:250]
 
     def has(k: str) -> bool:
-        k = fold(k)
+        k = plain(k)
         return k in text or re.sub(r"\s", "", k) in flat
 
     scores = {}
     for c in classes:
         s = sum(w for k, w in c.keywords.items() if has(k))
         s -= sum(w for k, w in c.negative.items() if has(k))
-        s += sum(c.title_weight for k in c.title if re.sub(r"\s", "", fold(k)) in head)
+        s += sum(c.title_weight for k in c.title if re.sub(r"\s", "", plain(k)) in head)
         scores[c.name] = s
     best = max(scores, key=scores.get)
     by_name = {c.name: c for c in classes}
@@ -73,8 +82,10 @@ def classify(doc: Document, classes: list[DocClass]) -> tuple[str | None, dict[s
 
 # ---------------------------------------------------------------- ekstrakcja
 class Extractor:
-    def __init__(self, backend):
+    def __init__(self, backend, final_check: str = "off"):
         self.backend = backend
+        # Końcowa ocena modelem pól z opcją `check`: off | note (NIE -> ostrzeżenie) | veto (NIE -> null).
+        self.final_check = final_check
 
     def static_prompt(self, cls: DocClass) -> str:
         # Część stała dla klasy: jej stan w modelu jest zapamiętywany i używany dla kolejnych dokumentów.
@@ -87,10 +98,22 @@ class Extractor:
     def run(self, doc: Document, cls: DocClass) -> tuple[dict, list[dict], str]:
         if hasattr(self.backend, "fill"):       # model lokalny: prowadzone wypełnianie formularza
             sections = [(s.name, s.is_list, [f.key for f in s.fields]) for s in cls.sections()]
-            answer = self.backend.fill(SYSTEM_PROMPT, self.static_prompt(cls), doc.text(max_pages=cls.pages), sections)
+            signed = frozenset(f.key for s in cls.sections() for f in s.fields if f.spec.get("validator") == "amount")
+            expected = expected_items(cls, doc.text(max_pages=cls.pages))
+            answer = self.backend.fill(SYSTEM_PROMPT, self.static_prompt(cls), doc.text(max_pages=cls.pages), sections,
+                                       signed=signed, min_items=expected)
         else:
+            expected = {}
             answer = self.backend.complete(SYSTEM_PROMPT, self.build_prompt(doc, cls), cls.first_header() + "\n", 600)
         data, trace = self.finish(doc, cls, answer)
+        if self.final_check != "off" and hasattr(self.backend, "say"):
+            from .sanity import review
+            review(self.backend, doc.text(max_pages=cls.pages), cls.output, data, trace, veto=self.final_check == "veto")
+        for name, count in expected.items():        # kompletność listy: rozbieżność trafia do sprawdzenia
+            found = len(data.get(name) or [])
+            if found != count:
+                trace.append({"pole": name, "wartosc": found, "surowa": found, "status": "ostrzezenie", "zrodlo": "reguła listy",
+                              "uwaga": f"dokument wymienia {count} podmioty w wyliczeniu, a odczytano {found}"})
         return data, trace, answer
 
     @staticmethod
@@ -103,6 +126,27 @@ class Extractor:
         apply_field_rules(cls, data, trace)
         apply_derived(cls, cls.output, data, data)
         return data, trace
+
+
+def expected_items(cls: DocClass, text: str) -> dict[str, int]:
+    """Reguła `lists.<lista>.count` z YAML: liczba elementów listy wynikająca wprost z tekstu.
+
+    `scope` wskazuje fragment (grupa 1), `item` - numer punktu wyliczenia (grupa 1). Liczą się kolejne
+    numery 1, 2, 3...; wynik poniżej 2 niczego nie wymusza (o liczbie elementów decyduje wtedy model).
+    """
+    out: dict[str, int] = {}
+    for name, rule in (cls.lists or {}).items():
+        count = (rule or {}).get("count")
+        scope = re.search(count["scope"], text) if count else None
+        if not scope:
+            continue
+        run = 0
+        for number in re.findall(count["item"], scope.group(1) if scope.groups() else scope.group(0)):
+            if int(number) == run + 1:
+                run += 1
+        if run >= 2:
+            out[name] = run
+    return out
 
 
 # ---------------------------------------------------------------- formularz -> surowa struktura
@@ -195,11 +239,23 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
         trace.append(entry)
         return result
 
+    forced = ""
+    if spec.get("decide") and "enum" not in spec and "enum_from" not in spec:
+        validate = VALIDATORS[spec.get("validator", "text")]
+        found = value_from_scope(spec["decide"], doc.text(max_pages=None), spec.get("validator", "text"))
+        if found is not None and (value is None or validate(str(value), from_ocr).value != validate(found[0], from_ocr).value):
+            forced = f"{value!r} -> wartość wskazana wprost w zdaniu: {found[1]!r}"
+            value = found[0]
+
     if value is None or (isinstance(value, str) and (value.strip().casefold() in EMPTY or UNREADABLE in value)):
         return done(None, "brak")
     if REDACTED in str(value):
         return done(None, "brak", "pole zakryte (anonimizacja)")
     value = str(value).strip().strip('"„”')
+    for pattern in spec.get("cut", []):       # reguła `cut` z YAML: wartość kończy się przed wskazanym dopiskiem
+        tail = re.search(pattern, value, flags=re.IGNORECASE)
+        if tail and tail.start() > 0:
+            value = value[:tail.start()].rstrip(" ,;")
     text = doc.text(max_pages=None)
 
     if "enum" in spec or "enum_from" in spec:
@@ -238,15 +294,30 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
         # Data, kwota, numer ogłoszenia, e-mail: model nie może podać wartości, której w dokumencie nie ma.
         result, status, note = None, "niezweryfikowane", "wartości nie ma w tekście dokumentu"
 
+    if result is not None and any(re.fullmatch(p, str(result).strip(), flags=re.IGNORECASE) for p in spec.get("reject", [])):
+        # Reguła `reject` z YAML: wartość ma postać, której to pole mieć nie może (etykieta rubryki, dane innego rodzaju).
+        result, status, note = None, "niezweryfikowane", "wartość ma postać niedozwoloną dla pola (etykieta rubryki albo dane innego rodzaju)"
+
     if result is not None and spec.get("line_pattern") and not line_context_ok(spec["line_pattern"], kind, result, text):
         result, status, note = None, "niezweryfikowane", "wartość stoi w dokumencie w innym miejscu niż wymagane dla pola"
 
     confidence = None
     if from_ocr:
         result, status, note, confidence = cross_check_ocr(doc, kind, value, text, result, status, note)
+        if result is not None and (kind == "person" or (kind == "text" and len(str(result).split()) <= 3)):
+            reads = [text] + [read for page in doc.pages for read in page.alt_reads.values()]
+            voted = majority_spelling(str(result), reads)
+            if voted != result:
+                result, note = voted, (note + "; " if note else "") + f"zapis przeważający w odczytach dokumentu: {voted!r}"
+    if result is not None and spec.get("known_values"):
+        fixed = restore_known(str(result), spec["known_values"])
+        if fixed != result:
+            result, note = fixed, (note + "; " if note else "") + f"zapis z listy znanych wartości: {fixed!r}"
 
     if result is not None and spec.get("output_type") == "integer":
         result = int(result)
+    if forced and result is not None:
+        status, note = ("dopasowano" if status == "ok" else status), (forced + ("; " + note if note else ""))
     return done(result, status, note, confidence)
 
 
@@ -408,13 +479,43 @@ def decide_from_text(rule: dict, text: str):
     """
     flat = re.sub(r"\s+", " ", text)
     for scope in rule.get("scope", []):
-        for sentence in (m.group(0) for m in re.finditer(scope, flat, flags=re.IGNORECASE)):
+        for sentence in scope_sentences(scope, flat):
             hits = [key for key, patterns in rule.get("patterns", {}).items()
                     if any(re.search(p, sentence, flags=re.IGNORECASE) for p in patterns)]
             if len(hits) == 1:
                 return int(hits[0]), sentence[:160]
             if hits:
                 return None                      # zdanie pasuje do kilku pozycji - niech rozstrzyga model
+    return None
+
+
+def scope_sentences(scope: str, flat: str):
+    """Fragmenty tekstu wskazane przez wyrażenie `scope`; gdy ma ono grupę, liczy się sama grupa."""
+    for m in re.finditer(scope, flat, flags=re.IGNORECASE):
+        yield m.group(1) if m.lastindex else m.group(0)
+
+
+def value_from_scope(rule: dict, text: str, kind: str):
+    """Reguła `decide` dla pola z wartością (dziś: daty): wartość stojąca we wskazanym zdaniu dokumentu.
+
+    Rozstrzyga tylko wtedy, gdy w pierwszym znalezionym zdaniu jest dokładnie jedna wartość danego rodzaju.
+    Zwraca (zapis z dokumentu, zdanie) albo None - wtedy zostaje odpowiedź modelu.
+    """
+    if kind != "date":
+        return None
+    flat = re.sub(r"\s+", " ", text)
+    for scope in rule.get("scope", []):
+        for sentence in scope_sentences(scope, flat):
+            found: dict[str, str] = {}
+            for pattern in DATE_PATTERNS:
+                for m in re.finditer(pattern, sentence.lower()):
+                    value = norm_date(m.group(0)).value
+                    if value:
+                        found.setdefault(value, m.group(0))
+            if len(found) == 1:
+                return next(iter(found.values())), sentence[:160]
+            if found:
+                return None
     return None
 
 

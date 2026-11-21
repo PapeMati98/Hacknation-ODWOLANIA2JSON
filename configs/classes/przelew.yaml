@@ -17,31 +17,45 @@ classify:
   negative:
     "wnoszę odwołanie": 4
     "udzielam pełnomocnictwa": 4
+# Etykiety rubryk wydruków bankowych: etykieta nie może być wartością pola.
+x-etykiety: &etykiety
+  - '(szczegóły|szczegoly) (płatności|platnosci|zlecenia|transakcji|operacji|przelewu):?'
+  - 'tytu[łl](em)?( operacji| przelewu| płatności| platnosci)?:?'
+  - 'opis( transakcji| operacji)?:?'
+  - 'dane (nadawcy|odbiorcy|zlecenia|zleceniodawcy|kontrahenta):?'
+  - '(numer|nr) (transakcji|referencyjny( transakcji)?|operacji):?'
+  - 'przelew (krajowy|internetowy|z rachunku|elixir.*)'
+  - '(typ|status|tryb) \S+( \S+)?'
 output:
   przelew_bankowy:
     data_operacji:
       type: string
       validator: date
-      desc: "Data wykonania operacji/przelewu; przepisz tak, jak jest zapisana."
+      desc: "Data wykonania przelewu - przy etykiecie 'Data operacji', 'Data transakcji', 'Data wykonania', 'Zlecona data wykonania' albo 'Data waluty'; przepisz tak, jak jest zapisana. Nie data wydruku, nie data księgowania, nie data podpisu ani wystawienia dokumentu."
     kwota:
       type: number
       validator: amount
-      desc: "Kwota przelewu; przepisz tak, jak jest zapisana, razem z walutą. Nie opłata ani prowizja banku."
+      desc: "Kwota przelewu; przepisz tak, jak jest zapisana, razem ze znakiem i walutą (np. '-17,00 PLN'). Nie opłata ani prowizja banku."
     na_rachunek:
       type: string
       validator: nrb
-      desc: "Pełny numer rachunku odbiorcy (beneficjenta); przepisz wszystkie cyfry."
+      desc: "Pełny numer rachunku odbiorcy - przy etykiecie 'Na rachunek', 'Rachunek odbiorcy', 'Rachunek kontrahenta', 'Rachunek beneficjenta' albo w części 'Dane odbiorcy'; przepisz wszystkie cyfry."
     numer_transakcji:
       type: string
       validator: text
       verify_in_text: true
-      desc: "Numer/identyfikator transakcji lub referencja operacji, jeśli podany."
+      # numer transakcji to krótki kod: nie zdanie, nie tytuł przelewu i nie etykieta
+      check: "krótki numer albo identyfikator transakcji, a nie tytuł przelewu"
+      reject: ['.{41,}', '(\S+\s+){3,}\S+', '(szczegóły|szczegoly) .*', 'tytu[łl].*', 'opis.*', 'dane .*', 'przelew .*', '\D*']
+      desc: "Numer, identyfikator albo numer referencyjny transakcji - krótki kod przy etykiecie 'Numer transakcji', 'Numer referencyjny', 'Identyfikator transakcji'. To nie tytuł przelewu i nie numer klienta. Brak takiego numeru = '-'."
     tytul:
       type: string
       validator: text
       verify_in_text: true
-      desc: "Tytuł przelewu przepisany dokładnie."
+      reject: *etykiety
+      check: "treść tytułu przelewu (za co jest płatność), a nie etykieta rubryki"
+      desc: "Tytuł przelewu przepisany dokładnie i w całości (także gdy zajmuje kilka linii) - treść przy etykiecie 'Tytuł', 'Tytułem', 'Opis', 'Szczegóły płatności' albo 'Tytuł operacji'. Wpisz samą treść, nie etykietę."
     z_rachunku:
       type: string
       validator: nrb
-      desc: "Pełny numer rachunku nadawcy (zleceniodawcy); przepisz wszystkie cyfry."
+      desc: "Pełny numer rachunku nadawcy - przy etykiecie 'Z rachunku', 'Rachunek zleceniodawcy', 'Rachunek nadawcy', 'Numer rachunku' właściciela albo w części 'Dane nadawcy'; przepisz wszystkie cyfry."

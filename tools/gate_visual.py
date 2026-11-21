@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from odwolania2json import pdfio                                    # noqa: E402
 from odwolania2json.textmatch import _compact, occurrences          # noqa: E402
 from odwolania2json.validators import norm_date                     # noqa: E402
-from odwolania2json.vision import DARK_SHARE, PROMPT, dark_share, judge   # noqa: E402
+from odwolania2json.vision import DARK_SHARE, PROMPT, dark_share, judge, value_crop   # noqa: E402
 from score import flatten                                           # noqa: E402
 
 LIMITS = {"mediana_s": 6.0, "falszywe_weto": 0.05, "falszywe_potwierdzenie": 0.05, "wykrycie": 0.50}
@@ -98,6 +98,7 @@ def main() -> int:
     ap.add_argument("--model", default=str(Path(__file__).resolve().parent.parent / "models" / "Qwen3.5-4B-Q4_K_M.gguf"))
     ap.add_argument("--mmproj", default=str(Path(__file__).resolve().parent.parent / "models" / "mmproj-F16.gguf"))
     ap.add_argument("--threads", type=int, default=6)
+    ap.add_argument("--seed", type=int, default=0, help="inne ziarno = inny zestaw linii")
     ap.add_argument("--dark-only", action="store_true", help="tylko kalibracja progu czarnych pikseli, bez modelu")
     ap.add_argument("--save-crops", type=Path, help="zapisz wycinki do katalogu (do obejrzenia)")
     ap.add_argument("--report", type=Path)
@@ -105,8 +106,9 @@ def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
 
     items = [it for m in args.manifest for it in json.loads(m.read_text(encoding="utf-8")) if it.get("gold")]
-    rng = random.Random(0)
+    rng = random.Random(args.seed)
     rng.shuffle(items)
+    items.sort(key=lambda it: it.get("split") != "real")      # realny skan organizatora zawsze w zestawie
     samples, seen = [], set()
     for item in items:                                   # po jednej linii każdego rodzaju z dokumentu
         if len(samples) >= args.lines:
@@ -126,7 +128,7 @@ def main() -> int:
             picked.add(kind)
             seen.add((item["pdf"], value))
             samples.append({"plik": item["pdf"], "pole": path, "rodzaj": kind, "wartosc": value, "linia": line.text,
-                            "pewnosc_linii": round(line.conf, 3), "crop": doc.crop(line)})
+                            "pewnosc_linii": round(line.conf, 3), "crop": value_crop(doc, line, kind, value)})
             if len(samples) >= args.lines:
                 break
     print(f"linii: {len(samples)} | wycinków: {len(samples) * 6}", flush=True)

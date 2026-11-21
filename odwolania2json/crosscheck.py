@@ -42,6 +42,33 @@ def walk(spec, node, path: str = ""):
                 yield from walk(sub, node.get(key) if isinstance(node, dict) else None, sub_path)
 
 
+def walk_parents(spec, node, path: str = "", parents: tuple = ()):
+    """Jak `walk`, ale z łańcuchem słowników nadrzędnych: (ścieżka, rodzic, klucz, specyfikacja, przodkowie)."""
+    if isinstance(spec, list):
+        for i, item in enumerate(node if isinstance(node, list) else []):
+            yield from walk_parents(spec[0], item, f"{path}[{i}]", parents)
+    elif isinstance(spec, dict) and not is_leaf(spec):
+        chain = parents + (node,)
+        for key, sub in spec.items():
+            sub_path = f"{path}.{key}" if path else key
+            if is_leaf(sub):
+                if isinstance(node, dict):
+                    yield sub_path, node, key, sub, chain
+            else:
+                yield from walk_parents(sub, node.get(key) if isinstance(node, dict) else None, sub_path, chain)
+
+
+def requirement_met(need: str, chain: tuple) -> bool:
+    """`requires: pole` - pole obok ma wartość; `requires: ../pole=1` - pole poziom wyżej ma wskazaną wartość."""
+    name, _, want = str(need).partition("=")
+    level = len(chain) - 1
+    while name.startswith("../"):
+        name, level = name[3:], level - 1
+    holder = chain[level] if 0 <= level < len(chain) else None
+    got = holder.get(name) if isinstance(holder, dict) else None
+    return got is not None if not want else str(got) == want
+
+
 def get_values(data, path: str) -> list:
     """Wartości spod ścieżki w rodzaju `Odwolujacy[].pelnomocnik.imie_nazwisko`."""
     nodes = [data]
@@ -106,7 +133,9 @@ def resolve_duplicates(cls: DocClass, data: dict, trace: list[dict], text: str) 
 def apply_field_rules(cls: DocClass, data: dict, trace: list[dict]) -> None:
     """Reguły zależności między polami jednego dokumentu, zapisane w YAML klasy:
 
-    requires: <pole obok>  - pole ma sens tylko razem z innym (np. miejscowość z nagłówka tylko z datą),
+    requires: <pole obok>  - pole ma sens tylko razem z innym (np. miejscowość z nagłówka tylko z datą);
+                             `../pole=1` wskazuje pole poziom wyżej i wymaganą wartość (dane pełnomocnika
+                             tylko wtedy, gdy strona działa przez pełnomocnika),
     not_in: <ścieżka>      - wartość nie może powtarzać wartości z innej listy (np. podpisujący
                              pełnomocnictwo nie może być jednocześnie pełnomocnikiem).
     Pole łamiące regułę dostaje null i trafia na listę do sprawdzenia.
@@ -118,13 +147,14 @@ def apply_field_rules(cls: DocClass, data: dict, trace: list[dict]) -> None:
         if path in by_path:
             by_path[path].update(wartosc=None, status="niezweryfikowane", uwaga=reason)
 
-    for path, parent, key, spec in list(walk(cls.output, data)):
+    for path, parent, key, spec, chain in list(walk_parents(cls.output, data)):
         value = parent.get(key)
         if value is None:
             continue
         need = spec.get("requires")
-        if need and parent.get(need) is None:
-            reject(path, parent, key, f"pole ma sens tylko razem z polem {need}, którego w dokumencie nie ma")
+        if need and not requirement_met(need, chain):
+            reject(path, parent, key, f"pole ma sens tylko razem z polem {need}, którego w dokumencie nie ma" if "=" not in str(need)
+                   else f"pole ma sens tylko, gdy {str(need).lstrip('./')}")
             continue
         other = spec.get("not_in")
         if other and any(fold(str(value)) == fold(str(v)) for v in get_values(data, other)):

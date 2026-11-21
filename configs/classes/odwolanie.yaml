@@ -18,6 +18,8 @@ classify:
   negative:
     "pełnomocnictwo": 1
     "potwierdzenie przelewu": 3
+    "orzeka:": 5              # orzeczenie KIO (wyrok, postanowienie) to nie odwołanie
+    "w składzie:": 4
 dictionaries:
   powody:
     1: Decyzja o odrzuceniu oferty
@@ -25,12 +27,13 @@ dictionaries:
     3: Decyzja o wykluczeniu wykonawcy
     4: Publikacja specyfikacji warunków zamówienia (SWZ)
     5: Modyfikacja treści SWZ
-    6: Odpowiedzi i wyjaśnienia do SWZ
+    6: Odpowiedzi/wyjaśnienia do SWZ
     7: Zaniechanie odrzucenia oferty
     8: Zaniechanie wykluczenia wykonawcy
     9: Decyzja o unieważnieniu postępowania
     10: Zaniechanie unieważnienia postępowania
     11: Opis przedmiotu zamówienia (OPZ)
+    12: Projektowane postanowienia umowy
 hints:        # podpowiedzi dla modelu: jak czynność bywa opisana w odwołaniu
   powody:
     1: Zamawiający odrzucił ofertę Odwołującego lub poinformował o jej odrzuceniu
@@ -44,6 +47,7 @@ hints:        # podpowiedzi dla modelu: jak czynność bywa opisana w odwołaniu
     9: Zamawiający unieważnił postępowanie
     10: Zamawiający nie unieważnił postępowania, choć powinien
     11: Zamawiający udostępnił opis przedmiotu zamówienia; odwołanie dotyczy treści OPZ
+    12: odwołanie dotyczy projektowanych postanowień umowy (wzoru umowy)
 output:
   OdwolanieKIO:
     data:
@@ -54,10 +58,17 @@ output:
       line_pattern:
         - '^\s*(?i:dnia|dn\.|data:?)?\s*{value}\s*(?i:r\.?|roku)?[\s.]*$'
         - '(?:^|\s)[A-ZĄĆĘŁŃÓŚŹŻ][\w.\-]*(?:[ \-][A-ZĄĆĘŁŃÓŚŹŻ][\w.\-]*){0,2}(?:,\s*|\s+(?=(?i:dnia|dn\.)))(?i:dnia|dn\.)?\s*{value}\s*(?i:r\.?|roku)?[\s.]*$'
+        - '^\s*[A-ZĄĆĘŁŃÓŚŹŻ][\w.\-]*(?:[ \-][A-ZĄĆĘŁŃÓŚŹŻ][\w.\-]*){0,2}\s+{value}\s*(?i:r\.?|roku)?[\s.]*$'    # „Łódź 05.06.2026 r.” od początku linii
       desc: "Data sporządzenia odwołania z nagłówka pierwszej strony (linia typu '<miejscowość>, dnia <dzień> <miesiąc> <rok> r.'). Przepisz datę tak, jak jest zapisana. Brak daty w nagłówku = '-'."
     czynnosc_dzien:
       type: string
       validator: date
+      # Gdy odwołanie wylicza zaskarżone czynności („wnoszę odwołanie wobec: 1. …; 2. …”), dzień stoi w punkcie
+      # pierwszym albo w zdaniu o zachowaniu terminu - bierzemy go stamtąd, jeśli jest tam dokładnie jedna data.
+      decide:
+        scope:
+          - 'odwo[łl]anie\s+wobec\s*:.{0,600}?\s1\.\s([^;]{0,600})'
+          - '(Informacja o\s?\w+ czynności zosta\w+ .{0,80}?\d{4})'
       desc: "Dzień, w którym Zamawiający dokonał zaskarżonej czynności (albo jej zaniechał). Szukaj w zdaniu 'Zamawiający w dniu ... <co zrobił lub czego nie zrobił>' albo 'Zamawiający <zamieścił / opublikował / przekazał / poinformował> ... w dniu ...' - przed zarzutami, w pierwszym zarzucie albo w uzasadnieniu, że odwołanie wniesiono w terminie. Przepisz datę tak, jak jest zapisana. To nie jest data ustawy, data odwołania ani dzień, w którym upływa termin na odwołanie."
     czynnosc_powod_id:
       type: integer
@@ -68,25 +79,30 @@ output:
       # Zdanie pasujące do kilku pozycji albo do żadnej zostawia decyzję modelowi.
       decide:
         scope:
+          - 'odwo[łl]anie\s+wobec\s*:.{0,600}?\s1\.\s([^;]{0,600})'     # pierwszy punkt wyliczenia - tylko on się liczy
           - 'Zamawiający w dniu[^.]*\.'
           - 'wobec (?:czynności|treści)[^.;]*'
         patterns:
-          1: ['(?<!nie )odrzucił ofert', 'o odrzuceniu ofert']
-          2: ['ogłosił wybór ofert', 'dokonał wyboru ofert']
-          3: ['(?<!nie )wykluczył', 'o wykluczeniu']
-          4: ['(?:opublikował|udostępnił|zamieścił)[^.]*(?:Specyfikacj\w+ Warunków Zamówienia|SWZ)', 'wobec treści (?:dokumentów zamówienia|SWZ|Specyfikacji)']
+          1: ['(?<!nie )odrzucił ofert', '(?<!zaniechał )(?<!zaniechani[aeu] )odrzuceni[ua] ofert']
+          2: ['ogłosił wybór ofert', 'dokonał wyboru ofert', 'wybor\w* (?:jako )?najkorzystniejszej ofert', 'czynności wyboru']
+          3: ['(?<!nie )wykluczył', 'o wykluczeniu', '(?<!zaniechał )(?<!zaniechani[aeu] )wykluczeni[ua] (?:Odwołując|wykonawc)']
+          4: ['(?:opublikował|udostępnił|zamieścił)[^.]*(?:Specyfikacj\w+ Warunków Zamówienia|SWZ)', 'wobec treści (?:dokumentów zamówienia|SWZ|Specyfikacji)', '^treści (?:dokumentów zamówienia|SWZ|Specyfikacji)']
           5: ['zmodyfikował', 'zmienił treść', 'modyfikacj\w+ treści']
-          6: ['odpowiedzi (?:i wyjaśnie\w+|na pytania)', 'wyjaśnie\w+ (?:do )?treści']
+          6: ['odpowiedzi (?:i wyjaśnie\w+|na pytania)', 'wyjaśnie\w+ (?:do )?treści', 'wyjaśnie\w+\s?(?:treści )?SWZ']
           7: ['nie odrzucił', 'zaniecha\w+ odrzucenia']
           8: ['nie wykluczył', 'zaniecha\w+ wykluczenia']
-          9: ['(?<!nie )unieważni+ł postępowanie', 'o unieważnieniu postępowania']
+          9: ['(?<!nie )unieważni+ł postępowanie', 'o unieważnieniu postępowania', '(?<!zaniechał )(?<!zaniechani[aeu] )unieważnien\w+ postępowania']
           10: ['nie unieważnił', 'zaniecha\w+ unieważnienia']
-          11: ['Opis\w* Przedmiotu Zamówienia']
+          11: ['Opis\w* Przedmiotu Zam', '\bOPZ\b']
+          12: ['projektowan\w+ postanowie\w+ umowy', '\bPPU\b', '(?:wz[oó]r\w*|projekt\w*) umowy']
     czynnosc_opis:
       derive: {dictionary: powody, key: OdwolanieKIO.czynnosc_powod_id}
     miejscowosc:
       type: string
       requires: data
+      # Skan gubi polskie znaki („Lódź”): zapis różniący się od znanej miejscowości tylko znakami
+      # diakrytycznymi jest zamieniany na zapis z listy. Miejscowość spoza listy zostaje bez zmian.
+      known_values: [Łódź, Wrocław, Poznań, Gdańsk, Białystok, Częstochowa, Toruń, Rzeszów, Kraków, Dąbrowa Górnicza, Elbląg, Płock, Wałbrzych, Włocławek, Tarnów, Chorzów, Grudziądz, Słupsk, Jastrzębie-Zdrój, Nowy Sącz, Jelenia Góra, Mysłowice, Piła, Ostrów Wielkopolski, Siemianowice Śląskie, Ostrowiec Świętokrzyski, Suwałki, Głogów, Chełm, Tomaszów Mazowiecki, Zamość, Przemyśl, Kędzierzyn-Koźle, Łomża, Żory, Bełchatów, Tarnowskie Góry, Świdnica, Piekary Śląskie, Biała Podlaska, Będzin, Racibórz, Ełk, Pruszków, Świętochłowice, Ostrołęka, Puławy, Wodzisław Śląski, Starogard Gdański, Dębica, Ciechanów, Zduńska Wola, Świnoujście, Kołobrzeg, Mińsk Mazowiecki, Świdnik, Oświęcim, Oleśnica, Chrzanów, Bolesławiec, Ząbki, Żyrardów, Luboń, Września, Śrem, Kraśnik, Jarosław, Żary, Żagań, Lębork, Wągrowiec, Wołomin, Łowicz, Łuków, Łęczna, Łańcut, Giżycko, Kętrzyn, Iława, Ostróda, Mława, Płońsk, Wyszków, Kobyłka, Zielona Góra, Gorzów Wielkopolski, Bielsko-Biała, Ruda Śląska, Piotrków Trybunalski, Inowrocław, Wałcz, Świebodzin, Nowa Sól, Kłodzko, Dzierżoniów, Oława, Lubań, Środa Wielkopolska, Kościan, Koło, Słupca, Nowy Tomyśl, Swarzędz, Łask, Wieluń, Końskie, Skarżysko-Kamienna, Jędrzejów, Busko-Zdrój, Staszów, Leżajsk, Jasło, Myślenice, Kęty, Żywiec, Mikołów, Knurów, Kłobuck, Myszków, Białogard, Świecie, Chełmno, Żnin, Działdowo, Gołdap, Augustów, Zambrów, Hajnówka, Sokółka, Łapy, Biłgoraj, Hrubieszów, Lubartów, Dęblin, Grójec, Góra Kalwaria, Józefów, Błonie, Łomianki, Pułtusk, Węgrów, Łosice, Gdynia, Warszawa, Katowice, Lublin, Szczecin, Bydgoszcz, Opole, Olsztyn, Kielce, Radom, Gliwice, Zabrze, Bytom, Sosnowiec, Rybnik, Tychy, Koszalin, Kalisz, Legnica, Konin, Siedlce, Sopot]
       validator: text
       verify_in_text: true
       desc: "Miejscowość z nagłówka pierwszej strony, z linii typu 'X, dnia ...'. Brak = null."
@@ -113,19 +129,27 @@ output:
         enum: [0, 1]
         desc: "1 jeśli Odwołujący działa przez pełnomocnika (radca prawny, adwokat, kancelaria), inaczej 0."
       pelnomocnik:
+        # Dane pełnomocnika mają sens tylko wtedy, gdy Odwołujący działa przez pełnomocnika
+        # (inaczej e-mail z danych samego Odwołującego trafiałby do pełnomocnika).
         imie_nazwisko:
           type: string
           validator: person
           verify_in_text: true
+          requires: "../przez-pelnomocnika=1"
+          check: "wyłącznie imię i nazwisko osoby (nie firma, kancelaria, funkcja ani etykieta)"
+          # imię i nazwisko to nie firma, funkcja ani etykieta i nie zawiera cyfr
+          reject: ['.*\d.*', '.*\b(sp\.|s\.a\.|spółka|spolka|kancelaria|urząd|urzad|zarząd\w*|zarzad\w*|prezes|prokurent|pełnomocnik\w*)(\s.*|$)']
           desc: "Imię i nazwisko pełnomocnika Odwołującego."
         nazwa:
           type: string
           validator: text
           verify_in_text: true
+          requires: "../przez-pelnomocnika=1"
           desc: "Nazwa kancelarii lub podmiotu zatrudniającego pełnomocnika."
         mail:
           type: string
           validator: email
+          requires: "../przez-pelnomocnika=1"
           desc: "Adres e-mail pełnomocnika."
   Zamawiajacy:
     - krs:

@@ -38,6 +38,7 @@ class DocClass:
     output: dict
     dictionaries: dict = field(default_factory=dict)
     hints: dict = field(default_factory=dict)        # podpowiedzi do pozycji słowników
+    lists: dict = field(default_factory=dict)        # reguły list (np. liczba elementów wynikająca z tekstu)
     min_score: float = 4.0
     title: list[str] = field(default_factory=list)   # słowa tytułu szukane na początku 1. strony
     title_weight: float = 5.0
@@ -128,6 +129,7 @@ def load_classes(directory: Path) -> list[DocClass]:
             output=raw["output"],
             dictionaries={k: {int(i): s for i, s in d.items()} for k, d in (raw.get("dictionaries") or {}).items()},
             hints={k: {int(i): s for i, s in d.items()} for k, d in (raw.get("hints") or {}).items()},
+            lists=raw.get("lists") or {},
         )
         doc_class.sections()  # walidacja konfiguracji przy starcie
         classes.append(doc_class)

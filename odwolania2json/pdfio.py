@@ -11,7 +11,9 @@ OCR (RapidOCR / PP-OCR ONNX, CPU):
   obok bloku (np. "Odwołujący:" przy kilku liniach danych) trafia na początek tego bloku. Czarne
   prostokąty anonimizacji są wykrywane w obrazie i wstawiane do tekstu jako znacznik [ZAKRYTE].
   Strona jest renderowana tak, jakby była kartką A4 - skan zapisany w niższej rozdzielczości nie jest
-  sztucznie powiększany.
+  sztucznie powiększany. Skan przekrzywiony (kartka położona krzywo na skanerze) jest prostowany
+  rachunkowo: kąt bierzemy z ramek długich linii, a wiersze i bloki układamy we współrzędnych
+  wyprostowanych - inaczej długie linie zachodzą w pionie na sąsiednie i tekst się miesza.
   4. pierwszy odczyt alternatywny jest wykonywany zawsze i zapamiętywany w całości: to drugi,
      niezależny odczyt strony używany do kontroli krzyżowej wartości (extract.ocr_confirms);
      trzeci odczyt (kolejna rozdzielczość) jest robiony tylko wtedy, gdy dwa pierwsze się różnią.
@@ -19,6 +21,8 @@ OCR (RapidOCR / PP-OCR ONNX, CPU):
 from __future__ import annotations
 
 import logging
+import math
+import re
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -51,6 +55,8 @@ class Line:
     y: float  # środek linii w pionie, znormalizowany 0..1
     box: tuple[float, float, float, float] | None = None   # ramka linii (x0, y0, x1, y1), znormalizowana 0..1
     page: int = 0                                          # numer strony (od 1)
+    lay: tuple[float, float, float, float] | None = None   # ramka po wyprostowaniu strony - do układu tekstu
+    angle: float = 0.0                                     # przekrzywienie strony (radiany)
 
 
 @dataclass
@@ -77,14 +83,19 @@ class Document:
         pages = self.pages if max_pages is None else self.pages[:max_pages]
         return "\n\n".join(f"--- strona {p.number} ---\n{p.text}" for p in pages)
 
-    def crop(self, line: Line, dpi: int = BASE_DPI, margin: float = 0.35):
-        """Wycinek strony z jedną linią tekstu (obraz PIL) - dla niezależnego czytelnika wizualnego."""
+    def crop(self, line: Line, dpi: int = BASE_DPI, margin: float = 0.35, span: tuple[float, float] | None = None):
+        """Wycinek strony z jedną linią tekstu (obraz PIL) - dla niezależnego czytelnika wizualnego.
+
+        `span` zawęża wycinek do części szerokości linii (0..1), np. do okolicy jednej wartości.
+        """
         if line.box is None or not line.page:
             return None
         from PIL import Image
         image = Image.fromarray(_render(pdfium.PdfDocument(self.path)[line.page - 1], dpi))
         w, h = image.size
         x0, y0, x1, y1 = line.box
+        if span is not None:
+            x0, x1 = x0 + span[0] * (x1 - x0), x0 + span[1] * (x1 - x0)
         pad = margin * (y1 - y0) * h
         return image.crop((max(0, int(x0 * w - pad)), max(0, int(y0 * h - pad)),
                            min(w, int(x1 * w + pad)), min(h, int(y1 * h + pad))))
@@ -99,19 +110,57 @@ class Document:
         return "\n".join(p.alt_reads[dpi] for p in self.pages if p.source == "ocr")
 
 
+OCR_FIXES = [
+    # „sp. z o.o.” z zerem zamiast litery „o” - pomyłka OCR, która psuje nazwę firmy
+    (re.compile(r"(?i)\bz\s?(?:0\.\s?[o0]\.|o\.\s?0\.)"), "z o.o."),
+    # litera wewnątrz ciągu cyfr („9994328o29”, „3o-799”) to cyfra odczytana jako litera
+    (re.compile(r"(?<=\d)[oO](?=\d|-\d)"), "0"),
+    (re.compile(r"(?<=\d)[lI](?=\d)"), "1"),
+    # przecinek w adresie e-mail („a,wrobel@kancelaria.example”) to kropka - przecinka w adresie być nie może
+    (re.compile(r"[\w.,+-]+@[\w.,-]+"), lambda m: re.sub(r"(?<=\w),(?=\w)", ".", m.group(0))),
+]
+
+
+def fix_ocr(text: str) -> str:
+    for pattern, replacement in OCR_FIXES:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def _lines_text(lines: list[Line]) -> str:
     return "\n".join(l.text for l in sorted(lines, key=lambda l: l.y))
 
 
-def _ocr_lines(img: np.ndarray) -> list[Line]:
+def skew_angle(boxes, width: int) -> float:
+    """Kąt przekrzywienia strony w radianach: mediana nachylenia górnych krawędzi długich linii."""
+    angles = sorted(math.atan2(float(b[1][1]) - float(b[0][1]), float(b[1][0]) - float(b[0][0]))
+                    for b in boxes if float(b[1][0]) - float(b[0][0]) > 0.25 * width)
+    if len(angles) < 3:
+        return 0.0
+    angle = angles[len(angles) // 2]
+    return angle if 0.003 < abs(angle) < 0.2 else 0.0          # poniżej ~0,2 stopnia nie ma czego prostować
+
+
+def straighten(points, angle: float, width: int, height: int) -> tuple[float, float, float, float]:
+    """Ramka (0..1) wielokąta po obróceniu strony o -angle wokół środka."""
+    cx, cy, cos, sin = width / 2, height / 2, math.cos(angle), math.sin(angle)
+    xs = [cx + (float(x) - cx) * cos + (float(y) - cy) * sin for x, y in points]
+    ys = [cy - (float(x) - cx) * sin + (float(y) - cy) * cos for x, y in points]
+    return min(xs) / width, min(ys) / height, max(xs) / width, max(ys) / height
+
+
+def _ocr_lines(img: np.ndarray, with_angle: bool = False):
     res = _engine()(img)
     h, w = img.shape[:2]
+    boxes = list(res.boxes) if res.boxes is not None else []
+    angle = skew_angle(boxes, w)
     lines = []
-    for box, txt, conf in zip(res.boxes if res.boxes is not None else [], res.txts or [], res.scores or []):
+    for box, txt, conf in zip(boxes, res.txts or [], res.scores or []):
         xs, ys = [pt[0] for pt in box], [pt[1] for pt in box]
         frame = (float(min(xs)) / w, float(min(ys)) / h, float(max(xs)) / w, float(max(ys)) / h)
-        lines.append(Line(txt, float(conf), (min(ys) + max(ys)) / 2 / h, frame))
-    return lines
+        lay = straighten(box, angle, w, h) if angle else frame
+        lines.append(Line(fix_ocr(txt), float(conf), (lay[1] + lay[3]) / 2, frame, lay=lay, angle=angle))
+    return (lines, angle) if with_angle else lines
 
 
 def _render(page, dpi: int) -> np.ndarray:
@@ -136,7 +185,7 @@ def find_redactions(img: np.ndarray, line_height: float) -> list[tuple[float, fl
 
 def layout_text(lines: list[Line], redactions: list[tuple[float, float, float, float]]) -> str:
     """Tekst strony z zachowaniem układu: wiersze od lewej do prawej, bloki, etykiety z marginesu przed blokiem."""
-    items = [(l.box or (0.0, l.y, 1.0, l.y), l.text if l.conf >= LOW_CONF else UNREADABLE) for l in lines]
+    items = [(l.lay or l.box or (0.0, l.y, 1.0, l.y), l.text if l.conf >= LOW_CONF else UNREADABLE) for l in lines]
     if not items:
         return ""
     heights = sorted(b[3] - b[1] for b, _ in items if b[3] > b[1])
@@ -163,15 +212,17 @@ def layout_text(lines: list[Line], redactions: list[tuple[float, float, float, f
     out = []
     for block in blocks:
         everything = [it for row in block for it in row]
-        label = None
+        labels = []
         if len(everything) >= 3:
             for it in sorted(everything, key=lambda it: it[0][0]):
                 box, text = it
-                others = [o for o in everything if o is not it]
+                others = [o for o in everything if o is not it and not any(o is known for known in labels)]
                 if text.rstrip().endswith(":") and len(text.split()) <= 3 and text != REDACTED and \
                         sum(box[2] <= o[0][0] + 0.005 for o in others) >= 0.8 * len(others):
-                    label = it
-                    break
+                    labels.append(it)
+        # Jedna etykieta obok bloku (wyśrodkowana w pionie) należy do całego bloku. Kilka etykiet w jednym
+        # bloku stoi przy pierwszych liniach swoich części - zostają w swoich wierszach.
+        label = labels[0] if len(labels) == 1 else None
         if label is not None and not (block[0] == [label]):
             block = [[label]] + [[it for it in row if it is not label] for row in block]
         for row in block:
@@ -188,9 +239,13 @@ def layout_text(lines: list[Line], redactions: list[tuple[float, float, float, f
 def ocr_page(page) -> tuple[list[Line], dict[int, str], list]:
     """Zwraca (linie odczytu głównego po scaleniu skal, teksty odczytów alternatywnych wg DPI, czarne prostokąty)."""
     image = _render(page, BASE_DPI)
-    lines = _ocr_lines(image)
-    heights = sorted(l.box[3] - l.box[1] for l in lines if l.box)
+    lines, angle = _ocr_lines(image, with_angle=True)
+    heights = sorted(l.lay[3] - l.lay[1] for l in lines if l.lay)
     redactions = find_redactions(image, heights[len(heights) // 2] if heights else 0.012)
+    if angle:                                   # prostokąty w tych samych, wyprostowanych współrzędnych co linie
+        height, width = image.shape[:2]
+        redactions = [straighten([(x0 * width, y0 * height), (x1 * width, y0 * height), (x1 * width, y1 * height),
+                                  (x0 * width, y1 * height)], angle, width, height) for x0, y0, x1, y1 in redactions]
     reads: dict[int, str] = {}
     for dpi in ALT_DPIS:
         alt = _ocr_lines(_render(page, dpi))
@@ -220,6 +275,14 @@ def _reread_line(image: np.ndarray, line: Line) -> Line:
     x0, y0, x1, y1 = line.box
     pad = 0.5 * (y1 - y0) * height
     crop = image[max(0, int(y0 * height - pad)): int(y1 * height + pad), max(0, int(x0 * width - pad)): int(x1 * width + pad)]
+    if line.angle and line.lay and crop.size:
+        # Ramka przekrzywionej linii obejmuje kawałki sąsiednich linii: prostujemy wycinek i zostawiamy
+        # tylko pas o wysokości samej linii.
+        ch, cw = crop.shape[:2]
+        turn = cv2.getRotationMatrix2D((cw / 2, ch / 2), math.degrees(line.angle), 1.0)
+        crop = cv2.warpAffine(crop, turn, (cw, ch), borderValue=(255, 255, 255))
+        band = (line.lay[3] - line.lay[1]) * height
+        crop = crop[max(0, int(ch / 2 - band)): int(ch / 2 + band)]
     best = line
     for zoom in (1.5, 2.0, 0.75):
         parts = _ocr_lines(cv2.resize(crop, None, fx=zoom, fy=zoom, interpolation=cv2.INTER_CUBIC))
@@ -228,7 +291,7 @@ def _reread_line(image: np.ndarray, line: Line) -> Line:
         parts.sort(key=lambda p: p.box[0] if p.box else 0)
         conf = min(p.conf for p in parts)
         if conf > best.conf:
-            best = Line(" ".join(p.text for p in parts), conf, line.y, line.box, line.page)
+            best = Line(fix_ocr(" ".join(p.text for p in parts)), conf, line.y, line.box, line.page, line.lay, line.angle)
         if best.conf >= LOW_CONF:
             break
     return best

@@ -1,7 +1,13 @@
 name: pelnomocnictwo
+# Mocodawców może być kilku (konsorcjum: '1) spółka A ..., 2) spółka B ...') - każdy to osobny element listy
+# z własnym KRS, NIP i osobami podpisującymi.
 description: >-
   Pełnomocnictwo: dokument, w którym mocodawca (podmiot lub osoba) udziela umocowania
   pełnomocnikom do reprezentowania go, np. w postępowaniu odwoławczym przed KIO.
+  Mocodawcą jest podmiot ze zdania udzielającego pełnomocnictwa, a nie kancelaria z nagłówka pisma.
+  Przy konsorcjum ('1) spółka A ..., 2) spółka B ...') każdy wykonawca to osobny mocodawca
+  (## mocodawca 1, ## mocodawca 2) z własnym KRS, NIP i własnymi osobami podpisującymi
+  (te po słowach 'reprezentowana przez' przy danej spółce).
 pages: 2
 classify:
   title: ["pełnomocnictwo"]
@@ -16,6 +22,19 @@ classify:
   negative:
     "wnoszę odwołanie": 4
     "potwierdzenie przelewu": 3
+# Konsorcjum: mocodawców jest tylu, ile punktów wyliczenia '1) ..., 2) ...' przed zdaniem udzielającym
+# pełnomocnictwa - liczą się tylko punkty z własnym numerem KRS albo NIP (wyliczenie członków zarządu
+# albo pełnomocników nie jest listą mocodawców). Reguła podaje liczbę minimalną: model jest prowadzony do
+# kolejnego mocodawcy, nigdy nie skraca listy; rozbieżność trafia na listę do sprawdzenia.
+lists:
+  mocodawca:
+    count:
+      scope: '(?is)^(.{0,3500}?)udziela\w*\s+pe\S{1,3}nomoc'
+      item: '(?s)(?<![\w/.,])(\d{1,2})\)\s+(?:(?!\s\d{1,2}\)\s).){0,500}?\b(?:KRS|NIP)\b'
+# Imię i nazwisko to nie firma, funkcja ani etykieta i nie zawiera cyfr.
+x-nie-osoba: &nie_osoba
+  - '.*\d.*'
+  - '.*\b(sp\.|s\.a\.|spółka|spolka|kancelaria|urząd|urzad|zarząd\w*|zarzad\w*|prezes|prokurent|pełnomocnik\w*|mocodawc\w*)(\s.*|$)'
 output:
   mocodawca:
     - data:
@@ -23,7 +42,7 @@ output:
           type: string
           validator: person
           verify_in_text: true
-          desc: "Imię i nazwisko mocodawcy tylko gdy jest osobą fizyczną; dla firmy/spółki null."
+          desc: "Imię i nazwisko mocodawcy tylko gdy jest osobą fizyczną (także przedsiębiorca: 'Ja, niżej podpisany Jan Kowalski, prowadzący działalność gospodarczą pod firmą ...'); dla spółki '-'."
         krs:
           type: string
           validator: krs
@@ -32,7 +51,10 @@ output:
           type: string
           validator: text
           verify_in_text: true
-          desc: "Pełna nazwa mocodawcy (firma z formą prawną)."
+          check: "mocodawca, czyli podmiot, który udziela pełnomocnictwa - a nie kancelaria z nagłówka pisma ani pełnomocnik"
+          # nazwa kończy się przed siedzibą, adresem i danymi rejestrowymi
+          cut: ['\s+z\s+siedzib[ąa]\b', ',?\s+ul\.\s', ',?\s+(wpisan\w+|KRS|NIP|REGON)\b']
+          desc: "Pełna nazwa mocodawcy: spółki, instytucji albo firmy przedsiębiorcy - dokładnie tak, jak w zdaniu udzielającym pełnomocnictwa ('<nazwa> z siedzibą w ...'), z formą prawną zapisaną jak w tym zdaniu, bez siedziby i adresu. Nie skrócona nazwa z nagłówka ani stopki i nie kancelaria z papieru firmowego. Dla osoby fizycznej prowadzącej działalność gospodarczą wpisz firmę podaną po słowach 'pod firmą' (np. 'DUDEK-TECH Jarosław Dudek')."
         nip:
           type: string
           validator: nip
@@ -40,12 +62,14 @@ output:
         typ:
           type: string
           enum: [osoba_prawna, osoba_fizyczna]
-          desc: "osoba_prawna dla spółek/firm/instytucji, osoba_fizyczna dla człowieka."
+          desc: "osoba_prawna dla spółek i instytucji; osoba_fizyczna dla człowieka, także gdy prowadzi działalność gospodarczą pod własnym imieniem i nazwiskiem."
       podpisujacy:
         - imie_nazwisko:
             type: string
             not_in: "pelnomocnicy[].imie_nazwisko"
             validator: person
+            reject: *nie_osoba
+            check: "wyłącznie imię i nazwisko osoby (nie firma, kancelaria, funkcja ani etykieta)"
             verify_in_text: true
             desc: "Imię i nazwisko osoby podpisującej pełnomocnictwo w imieniu mocodawcy (np. członek zarządu, prezes)."
   pelnomocnicy:
@@ -53,9 +77,10 @@ output:
         type: string
         validator: person
         verify_in_text: true
+        reject: *nie_osoba
+        check: "wyłącznie imię i nazwisko osoby (nie firma, kancelaria, funkcja ani etykieta)"
         desc: "Imię i nazwisko osoby otrzymującej pełnomocnictwo, w mianowniku."
       pesel:
         type: string
         validator: pesel
-        output_type: integer
         desc: "PESEL pełnomocnika, 11 cyfr, tylko jeśli podany."

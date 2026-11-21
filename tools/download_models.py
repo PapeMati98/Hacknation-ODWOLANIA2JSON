@@ -3,6 +3,7 @@
   python tools/download_models.py          # model domyślny (Qwen3.5-4B)
   python tools/download_models.py --all    # także mniejszy model 0.8B (tylko do porównań)
   python tools/download_models.py --vision # także projektor obrazu (672 MB) dla opcji --visual-reader on
+  python tools/download_models.py --ocr-only   # same modele OCR (kilkanaście MB), bez modelu językowego
 """
 import sys
 from pathlib import Path
@@ -21,6 +22,13 @@ VISION = [
 ]
 
 if __name__ == "__main__":
+    # Modele OCR (PP-OCR ONNX) biblioteka pobiera przy pierwszym użyciu - robimy to tutaj, żeby samo
+    # przetwarzanie dokumentów nie wymagało już internetu.
+    from rapidocr import RapidOCR
+    RapidOCR()
+    print("modele OCR: gotowe")
+    if "--ocr-only" in sys.argv:
+        raise SystemExit(0)
     target = Path(__file__).resolve().parent.parent / "models"
     wanted = MODELS + (EXTRA if "--all" in sys.argv else []) + (VISION if "--vision" in sys.argv else [])
     for repo, revision, filename in wanted:

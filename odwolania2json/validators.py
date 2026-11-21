@@ -126,11 +126,12 @@ def norm_date(raw) -> Check:
     if raw in (None, ""):
         return Check(None, "brak")
     s = str(raw).strip().lower()
-    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)
+    m = re.search(r"(\d{4})[-./](\d{1,2})[-./](\d{1,2})(?!\d)", s)
     if m:
         y, mo, d = map(int, m.groups())
     else:
-        m = re.search(r"(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{4})", s)
+        m = re.search(r"(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{4})", s) or \
+            re.fullmatch(r"\D*(\d{2}) (\d{2}) (\d{4})\D*", s)          # „20 04 2026” - OCR zgubił kropki
         if m:
             d, mo, y = map(int, m.groups())
         else:

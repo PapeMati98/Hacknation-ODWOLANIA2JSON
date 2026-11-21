@@ -2,15 +2,20 @@
 
 Rozwiązanie zadania **Odwołania2json** (Urząd Zamówień Publicznych, HackNation 2026): zamienia dokumenty PDF sprawy odwoławczej KIO — odwołanie, pełnomocnictwo, potwierdzenie przelewu — na pliki JSON zgodne ze schematem organizatora.
 
-- Działa **lokalnie na CPU, bez GPU**. Wyłącznie komponenty open source (Apache-2.0 / MIT / BSD).
+- Działa **lokalnie na CPU, bez GPU, bez internetu i bez klucza API** — na laptopie biurowym z 16 GB RAM. Żaden dokument nie opuszcza komputera. Wyłącznie komponenty open source (Apache-2.0 / MIT / BSD).
+- Mały model językowy: **4 mld parametrów** (Qwen3.5-4B), patrz „Użyty model językowy”.
 - Obsługuje PDF-y z warstwą tekstową i **skany** (OCR).
-- Dokument spoza obsługiwanych klas (np. ogłoszenie TED) jest pomijany — nie powstaje dla niego JSON.
+- Typ dokumentu jest rozpoznawany **po treści**, nigdy po nazwie pliku. Dokument spoza obsługiwanych klas (np. ogłoszenie, wyrok KIO, SWZ) dostaje **pusty plik JSON** (`{}`).
 - Nową klasę dokumentu dodaje się **jednym plikiem YAML, bez zmian w kodzie**.
 - Każda wartość jest weryfikowana, także krzyżowo (dwa niezależne odczyty skanu, zgodność między dokumentami sprawy). Wartość niepewna trafia do wyniku jako `null`, a razem z proponowanym odczytem i powodem — na listę `do_sprawdzenia.json` dla człowieka. Zasada projektu: *lepiej przekazać pole do sprawdzenia, niż wpisać błędną wartość*.
 
 ## Uruchomienie
 
-Wymagania: Windows lub Linux, Python 3.13+, ok. 4 GB wolnego RAM, ok. 3,5 GB na dysku (model).
+### Przykład dla jury
+
+W Windows uruchom `start_ui.bat` i otwórz `http://127.0.0.1:8080`. Wgraj plik `przelew.pdf` ze sprawy `przyklad_02`, uruchom ekstrakcję i pobierz `przelew.json`. Sześć pól można porównać z plikiem o tej samej nazwie u organizatora. Przycisk „Pobierz ZIP sprawy” pobiera wszystkie wyniki. [Przykład i wzorzec UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/tree/84cc976f0a9af5cee14f131c795f929134ca0fda/dane/przyklad_02) · [Prezentacja projektu](./docs/Odwolania2JSON-prezentacja.pdf) · [Treść zgłoszenia HackTribe](./docs/DRAFT-HACKTRIBE.md)
+
+Wymagania: Windows lub Linux, Python 3.13+, ok. 5 GB wolnego RAM (zmierzone zużycie: 4,6 GB), ok. 3,5 GB na dysku (model). GPU, internet (po pobraniu modelu) i klucz API nie są potrzebne.
 
 ```bat
 start.bat
@@ -33,7 +38,58 @@ Docker (Linux / Windows / macOS):
 docker compose up --build
 ```
 
-Kontener czyta `./input`, zapisuje do `./output` i `./trace`, a model trzyma w `./models` (brakujący pobiera przy pierwszym starcie). Modele OCR są w obrazie.
+Kontener `odwolania2json` czyta `./input`, zapisuje do `./output` i `./trace`, a model trzyma w `./models` (brakujący pobiera przy pierwszym starcie). Modele OCR są w obrazie.
+
+### Interfejs webowy (prototyp — upload PDF + podgląd JSON/śladu/YAML)
+
+Aplikacja udostępnia lokalny interfejs webowy (zero dodatkowych zależności poza biblioteką standardową Pythona 3.13, 100% offline — bez CDN) działający na porcie `8080`:
+
+```bat
+start_ui.bat
+```
+
+lub ręcznie / w Dockerze:
+
+```bash
+.venv/Scripts/python -m odwolania2json.web --host 127.0.0.1 --port 8080
+# opcjonalnie z czytelnikiem wizualnym domyślnie włączonym:
+.venv/Scripts/python -m odwolania2json.web --host 127.0.0.1 --port 8080 --visual-reader on
+# albo przez Docker Compose:
+docker compose up --build web
+```
+
+Po uruchomieniu otwórz `http://127.0.0.1:8080`.
+
+#### Mapa widoków, pól i przycisków UI
+
+| Element / przycisk | Gdzie | Dokładne działanie |
+|---|---|---|
+| Zakładka **Sprawy i ekstrakcja** | Pasek główny | Główny widok roboczy: upload PDF, lista spraw z `input/`/`output/`, podgląd JSON, śladu ekstrakcji, listy `do_sprawdzenia.json` i punktacji klasyfikatora. |
+| Zakładka **Klasy dokumentów (YAML)** | Pasek główny | Przegląd, walidacja i zapis plików w `configs/classes/*.yaml` bez restartu serwera i bez zmian w kodzie. |
+| Globalny pasek błędu: **Ponów** / **Zamknij** | Pod nagłówkiem (gdy błąd sieci/API) | `Ponów` pojawia się tylko przy błędach z przypisaną akcją ponowienia (np. odczyt `/api/status`, listy spraw, statusu zadania albo uruchomienie z `input/`); błędy bez akcji ponowienia (np. nieudane anulowanie zadania) pokazują wyłącznie `Zamknij`. |
+| Pasek zadania: **Anuluj** / **Ponów** / **Zamknij** | Nad obszarem roboczym | `Anuluj` ustawia flagę przerwania zadania po bieżącym dokumencie (`POST /api/jobs/<id>/cancel`, już zapisane JSON-y pozostają w `output/`); `Ponów` pojawia się przy błędzie zadania i powtarza ostatnie wywołanie z **bieżącymi** wartościami formularza (polityka OCR, czytelnik wizualny, wybrane pliki); `Zamknij` chowa baner po zakończeniu. |
+| Strefa **Upuść pliki PDF sprawy lub wybierz z dysku** | Nowa sprawa | Wybór wielu plików `.pdf` (drag & drop lub okno systemowe). Pliki bez rozszerzenia `.pdf` są odrzucane po stronie UI, a backend dodatkowo weryfikuje nagłówek `%PDF-`, limit 25 MB/plik i max 25 plików/zgłoszenie. |
+| Baner błędu uploadu: **Zamknij** | Nowa sprawa (przy błędzie pliku/wysyłki) | Chowa komunikat walidacji uploadu (np. odrzucony plik nie-PDF lub błąd `400`/`413`). |
+| Przycisk **×** przy nazwie pliku | Lista wybranych plików | Usuwa pojedynczy plik z kolejki przed wysłaniem (nie usuwa nic z dysku). |
+| Pole **Nazwa katalogu sprawy** | Nowa sprawa | Opcjonalna nazwa podfolderu w `input/` i `output/`. Puste pole generuje automatyczną nazwę `sprawa_RRRRMMDD_GGMMSS`. |
+| Lista **Polityka sum kontrolnych OCR** | Nowa sprawa | Przekazuje `--ocr-checksum` do nowego uruchomienia lub `Przetwórz z input/`: `confidence` (domyślnie: zła suma przy wysokiej pewności OCR zostaje z ostrzeżeniem, inaczej `null`) lub `strict` (zła suma z OCR zawsze daje `null`). |
+| Lista **Czytelnik wizualny skanów (mmproj)** | Nowa sprawa | Przekazuje `--visual-reader` (`off` domyślnie — szybszy OCR 2 z 3; `on` — dodatkowy odczyt obrazu linii przez `models/mmproj-F16.gguf`, maks. 12 wycinków/dokument, wyłącznie lokalny tryb CPU). Gdy brak pliku `mmproj`, opcja `włączony` jest zablokowana z czytelną informacją. |
+| Przycisk **Uruchom ekstrakcję** | Nowa sprawa | Zapisuje wybrane PDF-y do `input/<sprawa>/`, uruchamia asynchroniczny potok (`POST /api/cases/run`, HTTP 202) i pokazuje pasek postępu z etapem, czasem trwania oraz szacowanym ETA. Po zakończeniu automatycznie otwiera sprawę na pierwszym sklasyfikowanym dokumencie. |
+| Przycisk **Wyczyść** | Nowa sprawa | Czyści listę wybranych (niewysłanych jeszcze) plików PDF z formularza; nie kasuje plików na dysku. |
+| Przycisk **Odśwież** | Sprawy w przestrzeni roboczej | Przeładowuje listę spraw z katalogów `input/`, `output/` i `trace/` (`GET /api/cases`), np. po zewnętrznym uruchomieniu CLI. |
+| Pozycja na liście spraw | Sprawy w przestrzeni roboczej | Otwiera podgląd sprawy (`GET /api/cases/<sprawa>`). Pokazuje liczbę sklasyfikowanych JSON-ów, dokumentów spoza klas (`{}`) oraz liczbę uwag z `do_sprawdzenia.json`. |
+| Przycisk **Przetwórz z input/** | Pasek podsumowania sprawy | Widoczny, gdy w `input/<sprawa>/` są pliki PDF. Uruchamia ponownie ekstrakcję na plikach z dysku z aktualnie wybraną w formularzu polityką OCR i ustawieniem czytelnika wizualnego. |
+| Przycisk **Pobierz ZIP sprawy** | Pasek podsumowania sprawy | Pobiera archiwum `<sprawa>.zip` ze wszystkimi wygenerowanymi plikami `output/<sprawa>/*.json` — łącznie z pustymi plikami `{}` dla dokumentów spoza klas (`GET /api/cases/<sprawa>/download.zip`). |
+| Pigułki dokumentów (nad podziałem ekranu) | Inspektor sprawy | Przełączają aktywny dokument sprawy (obsługa myszy i klawiszy `←`/`→`). Dokument rozpoznany pokazuje nazwę klasy (`odwolanie`, `pelnomocnictwo`, `przelew`), a dokument obcy znacznik `spoza klas → {}`. |
+| Przyciski **Kopiuj JSON** i **Pobierz .json** | Lewy panel (JSON) | `Kopiuj JSON` kopiuje sformatowaną treść JSON (`indent=2`) do schowka, a `Pobierz .json` pobiera dokładny plik z `output/<sprawa>/<plik>.json` (oba działają także dla dokumentu spoza klas z pustym obiektem `{}`). |
+| Podzakładka **Ślad ekstrakcji** + filtry **Wszystkie / Ostrzeżenia / Odrzucone / OK** | Prawy panel | Tabela pole po polu z `trace/<sprawa>/<plik>.trace.json`: ścieżka pola, wartość końcowa + uwaga walidatora, źródło (`tekst` / `OCR` + wskaźnik pewności i werdykt czytelnika wizualnego) oraz status. Filtry zawężają wiersze bez przeładowania. |
+| Podzakładka **Do sprawdzenia** | Prawy panel | Prezentuje listę z `trace/<sprawa>/do_sprawdzenia.json` dla całej sprawy: pola odrzucone (z proponowaną wartością i powodem), ostrzeżenia OCR oraz rozbieżności kontroli krzyżowej między dokumentami. |
+| Podzakładka **Klasyfikacja** | Prawy panel | Tabela wyniku klasyfikatora (suma punktów ze słów kluczowych, dopasowań tytułu i wag ujemnych `negative`) dla każdej klasy YAML wobec progu `min_score` oraz werdykt (`wybrana`, `poniżej progu`, `inna klasa`). Otwiera się automatycznie po kliknięciu dokumentu spoza klas (`{}`). |
+| Lista klas po lewej + **+ Nowa klasa** | Zakładka YAML | Kliknięcie klasy ładuje jej plik z `configs/classes/` do edytora z podglądem sekcji, pól i reguł YAML. `+ Nowa klasa` wstawia gotowy szablon `decyzja.yaml`. |
+| Pole **Nazwa pliku w configs/classes/** | Zakładka YAML | Nazwa docelowego pliku YAML (np. `decyzja.yaml`). Każda edycja tego pola automatycznie wygasza ewentualny stan konfliktu `409` i ukrywa przycisk `Ponów z nadpisaniem`. |
+| Pole **Definicja klasy YAML** | Zakładka YAML | Edytor treści YAML klasy dokumentu; każda edycja resetuje blokadę po błędzie walidacji i ukrywa baner sukcesu poprzedniego zapisu. |
+| Przycisk **Waliduj YAML** | Zakładka YAML | Wysyła treść edytora do `POST /api/classes/validate` (walidator `parse_class_yaml` zgodny ze schematem `DocClass` i `DocClass.sections()`) bez zapisu na dysk; pokazuje podsumowanie sekcji, liczby pól i użytych reguł lub dokładny błąd składni. |
+| Przycisk **Zapisz klasę YAML**, **Ponów z nadpisaniem** i **Zamknij** (alert YAML) | Zakładka YAML | Zapisuje atomowo plik do `configs/classes/<nazwa>.yaml` (`POST /api/classes`). Klasa działa natychmiast bez restartu serwera. Jeśli plik już istnieje (lub jest klasą wbudowaną), serwer zwraca `409 Conflict` i wymaga zmiany nazwy albo jawnego kliknięcia `Ponów z nadpisaniem`; `Zamknij` chowa baner błędu/konfliktu. |
 
 ### Wejście i wyjście
 
@@ -45,7 +101,7 @@ input/                          output/
 │   └── przelew_nr_1.pdf        │   └── przelew_nr_1.json
 ```
 
-Plik JSON ma tę samą nazwę co PDF i leży w podfolderze tej samej sprawy. Obok powstaje folder `trace/`:
+Plik JSON ma tę samą nazwę co PDF i leży w podfolderze tej samej sprawy. Dla dokumentu, który nie należy do żadnej klasy, powstaje plik z pustym obiektem `{}`. Obok powstaje folder `trace/`:
 
 - `trace/<sprawa>/<plik>.trace.json` — ślad ekstrakcji dokumentu (klasa, odpowiedź modelu, źródło i status każdego pola),
 - `trace/<sprawa>/do_sprawdzenia.json` — lista dla człowieka: pola odrzucone przez weryfikację (z proponowaną wartością i powodem) oraz rozbieżności między dokumentami sprawy.
@@ -69,6 +125,18 @@ Na 12-rdzeniowym CPU sprawa (odwołanie + pełnomocnictwo + przelew) zajmuje oko
 
 ### Tryb lokalny a API
 Rozwiązaniem ocenianym jest **tryb lokalny** (model na CPU): tylko w nim działa prowadzone wypełnianie formularza i tylko dla niego podajemy wyniki F1. Zmienna `O2J_API_BASE` pozwala podmienić model na otwarty model serwowany osobno; odpowiedź przechodzi wtedy tę samą weryfikację i kontrolę krzyżową, ale ten tryb **nie był mierzony** i nie jest potrzebny do uruchomienia.
+
+## Użyty model językowy
+
+| | |
+|---|---|
+| Model | **Qwen3.5-4B** (Alibaba, licencja Apache-2.0), 4 mld parametrów |
+| Postać | plik GGUF, kwantyzacja Q4_K_M, 2,7 GB; uruchamiany przez llama.cpp na CPU |
+| Gdzie działa | lokalnie, w procesie programu; bez serwera, bez API, bez klucza |
+| Ustawienia | temperatura 0 (wynik powtarzalny), tryb rozumowania wyłączony |
+| Pamięć | 4,6 GB łącznie z OCR (zmierzone) |
+
+Model ma wąską rolę: czyta tekst dokumentu i wpisuje wartości do formularza `klucz: wartość`. Nie rozpoznaje typu dokumentu, nie buduje JSON-a i nie liczy pól słownikowych — to robi kod na podstawie YAML. Każdą wartość z modelu sprawdza kod (sumy kontrolne, obecność w dokumencie, miejsce w dokumencie, drugi odczyt skanu); wartość, która nie przechodzi kontroli, nie trafia do wyniku. Dzięki temu wystarcza mały model, a wymiana na inny plik GGUF to jeden parametr (`--model`).
 
 ## Architektura
 
@@ -102,7 +170,9 @@ OCR zwraca linie w kolejności, która przy układzie dwukolumnowym (etykieta �
 - linie o tym samym położeniu w pionie tworzą wiersz (od lewej do prawej), wiersze bez większego odstępu — blok;
 - etykieta stojąca na marginesie obok bloku trafia na jego początek;
 - **czarne prostokąty anonimizacji** są wykrywane w obrazie (spójny, wypełniony obszar ciemnych pikseli) i wstawiane do tekstu jako `[ZAKRYTE]`. Wartość zawierająca znacznik albo występująca wyłącznie tuż obok niego (ocalały fragment zakrytej całości, np. „Kancelaria Prawna [ZAKRYTE]”) daje `null`;
-- strona jest renderowana jak kartka A4 — skan zapisany w małej rozdzielczości nie jest sztucznie powiększany; linia nadal nieczytelna jest czytana ponownie z wycinka w kilku powiększeniach.
+- strona jest renderowana jak kartka A4 — skan zapisany w małej rozdzielczości nie jest sztucznie powiększany; linia nadal nieczytelna jest czytana ponownie z wycinka w kilku powiększeniach;
+- **skan przekrzywiony** (kartka położona krzywo, 0,7–1,5° w skanach organizatora) jest prostowany rachunkowo: kąt wynika z ramek długich linii, a wiersze i bloki układane są we współrzędnych wyprostowanych. Bez tego długie linie zachodzą w pionie na sąsiednie i punkty wyliczenia mieszają się ze sobą;
+- typowe pomyłki OCR są poprawiane w tekście: „sp. z 0.o.” → „sp. z o.o.”, litera wewnątrz ciągu cyfr („9994328o29”) → cyfra. Imię, nazwisko i krótka nazwa, które OCR odczytał w dokumencie raz z polskim znakiem, raz bez („Łukasz” / „Lukasz”), dostają zapis przeważający we wszystkich odczytach.
 
 ### Kontrola krzyżowa
 Sprawdzenie pojedynczego pola nie wystarcza: KRS, daty, kwoty i numery ogłoszeń nie mają sumy kontrolnej, a poprawny numer może trafić do niewłaściwego podmiotu. Dlatego wynik przechodzi dodatkowe kontrole:
@@ -111,7 +181,11 @@ Sprawdzenie pojedynczego pola nie wystarcza: KRS, daty, kwoty i numery ogłosze�
    **Wskaźnik pewności** każdej wartości ze skanu łączy pewność linii podawaną przez OCR z werdyktem innych odczytów: *wysoka* — linia pewna (≥ 0,95) i inny odczyt daje to samo; *średnia* — brak sprzeczności, ale linia mniej pewna albo inny odczyt jej nie zawiera; *niska* — inny odczyt daje inną wartość. Niska → `null`; średnia → wartość zostaje z ostrzeżeniem. Numer ze złą sumą kontrolną zostaje (z ostrzeżeniem) tylko przy pewności wysokiej. Wskaźnik jest zapisany w śladzie i na liście do sprawdzenia.
 2. **Wartość musi być w dokumencie.** Dotyczy każdego pola, także dat, kwot i numerów ogłoszeń: model nie może podać wartości, której w tekście nie ma (np. przepisanej z instrukcji).
 3. **Kontrola przypisania.** Ten sam NIP / KRS / REGON / rachunek nie może trafić do kilku pól. Numer zostaje przy tym podmiocie, przy którego nazwie leży w dokumencie; gdy nie da się tego ustalić — znika ze wszystkich pól.
-4. **Zależności między polami** (w YAML klasy): `requires` — pole ma sens tylko razem z innym (miejscowość z nagłówka tylko z datą); `not_in` — wartość nie może powtarzać się na innej liście (podpisujący pełnomocnictwo nie może być pełnomocnikiem); `line_pattern` — linia, w której stoi wartość, musi mieć określoną postać (data odwołania stoi w osobnej linii nagłówka, sama albo po miejscowości; data ze zdania w treści nią nie jest). Na 71 przykładowych odwołaniach (tekst i skany) reguła przepuszcza wszystkie 55 dat nagłówka i żadnej innej daty.
+4. **Zależności między polami** (w YAML klasy): `requires` — pole ma sens tylko razem z innym (miejscowość z nagłówka tylko z datą; dane pełnomocnika tylko wtedy, gdy strona działa przez pełnomocnika — `requires: "../przez-pelnomocnika=1"`); `not_in` — wartość nie może powtarzać się na innej liście (podpisujący pełnomocnictwo nie może być pełnomocnikiem); `line_pattern` — linia, w której stoi wartość, musi mieć określoną postać (data odwołania stoi w osobnej linii nagłówka, sama albo po miejscowości; data ze zdania w treści nią nie jest). Na 71 przykładowych odwołaniach (tekst i skany) reguła przepuszcza wszystkie 55 dat nagłówka i żadnej innej daty.
+   `decide` — gdy dokument nazywa rzecz wprost we wskazanym zdaniu, rozstrzyga to zdanie, a nie model. W odwołaniu: pierwszy punkt wyliczenia „wnoszę odwołanie wobec: 1. …” wyznacza rodzaj zaskarżonej czynności (pozycję słownika) i jej dzień — zgodnie z zasadą organizatora, że liczy się wyłącznie pierwszy zarzut. Reguła rozstrzyga tylko wtedy, gdy zdanie pasuje do dokładnie jednej pozycji (albo zawiera dokładnie jedną datę); inaczej zostaje odpowiedź modelu. Bez modelu reguły dają na 10 skanach organizatora 10/10 dla rodzaju i 10/10 dla dnia, a na 48 sprawach tekstowych 44 trafne rozstrzygnięcia rodzaju, 0 błędnych i 4 pozostawione modelowi.
+   `reject` — wartość nie może mieć postaci, której to pole mieć nie może: etykieta rubryki bankowej („Szczegóły płatności”, „Dane odbiorcy”) nie jest tytułem przelewu, zdanie nie jest numerem transakcji, tekst z cyframi albo ze słowem „kancelaria”, „prezes”, „sp.” nie jest imieniem i nazwiskiem. Wartość pasująca w całości do wzorca → `null`. Reguły nie odrzucają żadnej z 357 wartości wzorcowych organizatora.
+   `cut` — wartość kończy się przed wskazanym dopiskiem (nazwa mocodawcy bez „z siedzibą w …”, adresu i numerów rejestrowych).
+   `lists.<lista>.count` (na poziomie klasy) — liczba elementów listy wynikająca wprost z tekstu. W pełnomocnictwie konsorcjum mocodawców jest tylu, ile punktów „1) …, 2) …” przed zdaniem udzielającym pełnomocnictwa; model jest prowadzony do kolejnego mocodawcy, a rozbieżność między wyliczeniem a wynikiem trafia na listę do sprawdzenia. Na 58 przykładowych pełnomocnictwach reguła podaje liczbę zgodną ze wzorcem w 58 przypadkach.
 5. **Zgodność między dokumentami sprawy** (`configs/cross_checks.yaml`): Odwołujący z odwołania ↔ mocodawca z pełnomocnictwa (KRS, NIP, nazwa), pełnomocnik z odwołania ↔ pełnomocnicy z pełnomocnictwa, kolejność dat. Rozbieżność jest zgłaszana, ale nie zmienia JSON-ów — nie wiadomo, który dokument ma rację. Na 60 przykładowych sprawach organizatora reguły nie dają ani jednego fałszywego alarmu.
 
 Reguły między dokumentami dopisuje się w YAML, bez zmian w kodzie (rodzaje: `same`, `not_after`, `one_of`).
@@ -182,7 +256,7 @@ output:                        # struktura wynikowego JSON
 ```
 
 Dostępne walidatory: `text`, `person` (imię i nazwisko bez tytułów), `date`, `amount`, `email`, `nip`, `regon`, `pesel`, `krs`, `nrb`, `bzp`, `ted`.
-Opcje pola: `verify_in_text`, `enum`, `enum_from`, `derive`, `only_if_multiple` (pole wypełniane tylko, gdy lista ma kilka elementów), `requires`, `not_in`, `line_pattern` (wyrażenie regularne lub lista wyrażeń z miejscem `{value}` — postać linii, w której musi stać wartość), `output_type: integer`.
+Opcje pola: `verify_in_text`, `enum`, `enum_from`, `derive`, `only_if_multiple` (pole wypełniane tylko, gdy lista ma kilka elementów), `requires`, `not_in`, `line_pattern` (wyrażenie regularne lub lista wyrażeń z miejscem `{value}` — postać linii, w której musi stać wartość), `decide` (`scope` — w których zdaniach szukać; dla pola słownikowego dodatkowo `patterns` — wyrażenie dla każdej pozycji słownika: gdy pasuje dokładnie jedna, rozstrzyga ona zamiast modelu; dla daty wystarczy `scope`: rozstrzyga jedyna data we wskazanym zdaniu), `known_values` (lista znanych zapisów — wartość różniąca się tylko polskimi znakami jest zamieniana na zapis z listy), `output_type: integer`. `requires` przyjmuje nazwę pola obok albo ścieżkę poziom wyżej z wymaganą wartością (`"../pole=1"`). `reject` (lista wyrażeń: wartość pasująca w całości jest odrzucana), `cut` (lista wyrażeń: wartość jest ucinana przed dopasowaniem), `check` (opis, czym wartość ma być — pytanie do końcowej oceny modelem, patrz niżej). Reguły list wpisuje się w sekcji `lists` klasy: `count` ze `scope` (fragment dokumentu) i `item` (numer punktu wyliczenia).
 Podpowiedzi do pozycji słownika (jak dana pozycja bywa opisana w dokumentach) wpisuje się w sekcji `hints`.
 
 ## Ocena jakości
@@ -211,3 +285,4 @@ python tools/score.py --manifest eval/manifest.json --pred eval/out --split dev
 | ONNX Runtime | MIT | silnik OCR |
 | pypdfium2 (PDFium) | Apache-2.0 / BSD-3 | odczyt i render PDF |
 | OpenCV, NumPy, Pillow, PyYAML | Apache-2.0 / BSD / MIT-CMU / MIT | przetwarzanie obrazu i konfiguracja |
+| Znak graficzny UZP (`odwolania2json/web_assets/uzp-logo.png`) | Identyfikacja wizualna UZP (`gov.pl/web/uzp`) | wyłącznie lokalny nagłówek prototypu Web UI dla zadania UZP na HackNation 2026 (wymienny jednym plikiem, brak połączeń zewnętrznych) |

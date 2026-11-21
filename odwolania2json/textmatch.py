@@ -113,6 +113,48 @@ def snap_digits(value: str, text: str, kind: str) -> str | None:
     return hits[0] if len(hits) == 1 else None
 
 
+def bare(word: str) -> str:
+    """Wyraz bez wielkości liter i bez znaków diakrytycznych (także obcych, które dopisuje OCR)."""
+    word = unicodedata.normalize("NFKD", word.casefold().replace("ł", "l"))
+    return "".join(ch for ch in word if not unicodedata.combining(ch))
+
+
+def majority_spelling(value: str, texts: list[str]) -> str:
+    """Zapis wyrazów wartości, który przeważa w odczytach dokumentu.
+
+    OCR potrafi ten sam wyraz odczytać raz z polskim znakiem, raz bez („Łukasz” / „Lukasz”) albo dopisać
+    znak, którego nie ma („Zawadżki”). Wyraz występuje w dokumencie zwykle kilka razy (treść, podpis,
+    stopka) i w kilku odczytach - wygrywa zapis częstszy. Przy remisie wartość zostaje bez zmian.
+    """
+    counts: dict[str, dict[str, int]] = {}
+    wanted = {bare(w.strip(".,;:")) for w in value.split()}
+    for text in texts:
+        for token in re.findall(r"[^\W\d_]+(?:-[^\W\d_]+)*", text):
+            key = bare(token)
+            if key in wanted:
+                forms = counts.setdefault(key, {})
+                forms[token.casefold()] = forms.get(token.casefold(), 0) + 1
+    out = []
+    for word in value.split():
+        core = word.strip(".,;:")
+        forms = counts.get(bare(core), {})
+        best = max(forms, key=forms.get, default=None)
+        if best and best != core.casefold() and forms[best] > forms.get(core.casefold(), 0):
+            shaped = best.upper() if core.isupper() else "-".join(p[:1].upper() + p[1:] for p in best.split("-")) \
+                if core[:1].isupper() else best
+            word = word.replace(core, shaped)
+        out.append(word)
+    return " ".join(out)
+
+
+def restore_known(value: str, known: list[str]) -> str:
+    """Zapis z listy znanych wartości, gdy różni się od wartości tylko znakami diakrytycznymi („Lódź” -> „Łódź”)."""
+    if value in known:
+        return value
+    hits = [k for k in known if bare(k) == bare(value)]
+    return hits[0] if len(hits) == 1 else value
+
+
 def digits_in_text(value: str, text: str) -> bool:
     return re.sub(r"\D", "", value) in re.sub(r"[ \-]", "", text)
 
@@ -168,8 +210,8 @@ def second_read(value: str, primary: str, alt: str) -> str | None:
     return "brak"
 
 
-DATE_PATTERNS = (r"\d{4}-\d{1,2}-\d{1,2}", r"\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{4}",
-                 r"\d{1,2}\s+[a-ząćęłńóśźż]+\s+\d{4}")
+DATE_PATTERNS = (r"\d{4}[-./]\d{1,2}[-./]\d{1,2}(?!\d)", r"\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{4}",
+                 r"\d{1,2}\s+[a-ząćęłńóśźż]+\s+\d{4}", r"(?<![\d.,])\d{2} \d{2} \d{4}(?![\d.,])")
 
 
 def occurrences(value: str, text: str, normalize=None) -> list[tuple[str, str]]:

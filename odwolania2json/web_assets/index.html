@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Odwołania2json — Urząd Zamówień Publicznych · HackNation 2026</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <div class="gov-strip">
+    <div class="gov-strip-inner">
+      <div class="gov-meta">
+        <span class="gov-flag-dot" aria-hidden="true"></span>
+        <span>Serwis Rzeczypospolitej Polskiej · <strong>Urząd Zamówień Publicznych</strong> · KIO</span>
+      </div>
+      <div class="hn-co-brand">
+        <span class="hn-wordmark" aria-label="HackNation 2026">
+          <span class="hn-bar" aria-hidden="true"></span>
+          <span class="hn-hack">HACK</span><span class="hn-nation">NATION</span>
+          <span class="hn-date">21–22.11.2026 / BYDGOSZCZ</span>
+        </span>
+        <span id="env-backend" class="pill pill-ok">Łączenie…</span>
+        <span id="env-checksum" class="pill">Tryb: confidence</span>
+      </div>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <img
+          src="/assets/uzp-logo.png"
+          alt="Urząd Zamówień Publicznych"
+          class="uzp-logo"
+          width="124"
+          height="48"
+        />
+        <div class="brand-divider" aria-hidden="true"></div>
+        <div class="brand-copy">
+          <div class="brand-title">Odwołania2json</div>
+          <div class="brand-sub">Ekstrakcja akt spraw odwoławczych KIO do JSON</div>
+        </div>
+      </div>
+
+      <nav class="nav-tabs" role="tablist" aria-label="Widoki aplikacji">
+        <button id="tab-cases" class="nav-tab" role="tab" aria-selected="true" aria-controls="panel-cases" type="button">Sprawy i ekstrakcja</button>
+        <button id="tab-classes" class="nav-tab" role="tab" aria-selected="false" aria-controls="panel-classes" type="button">
+          <span>Klasy dokumentów (YAML)</span>
+          <span id="nav-class-count" class="tab-count" aria-hidden="true">0</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <div id="global-error-shell" class="job-shell" hidden>
+    <div id="global-error-box" class="alert-err" role="alert">
+      <span id="global-error-text"></span>
+      <div class="btn-row">
+        <button id="btn-global-retry" class="btn btn-sm" type="button">Ponów</button>
+        <button id="btn-global-dismiss" class="btn btn-sm" type="button">Zamknij</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="job-shell" class="job-shell" hidden>
+    <div id="job-banner" class="progress-bar-box">
+      <div class="job-info">
+        <strong id="job-title">Aktywne zadanie:</strong>
+        <span id="job-case" class="mono"></span>
+        <span>—</span>
+        <span id="job-stage" aria-live="polite" aria-atomic="true"></span>
+      </div>
+      <div class="job-controls">
+        <div id="job-track" class="progress-track" aria-hidden="true">
+          <div id="job-fill" class="progress-fill"></div>
+        </div>
+        <span id="job-elapsed" class="mono" aria-label="Czas trwania">0 s</span>
+        <button id="btn-job-cancel" class="btn btn-sm" type="button">Anuluj</button>
+        <button id="btn-job-retry" class="btn btn-sm" type="button" hidden>Ponów</button>
+        <button id="btn-job-close" class="btn btn-sm" type="button" hidden>Zamknij</button>
+      </div>
+    </div>
+  </div>
+
+  <main id="panel-cases" class="workspace" role="tabpanel" aria-labelledby="tab-cases">
+    <aside class="stack">
+      <section class="panel" aria-labelledby="upload-h">
+        <div class="panel-head">
+          <h2 id="upload-h" class="panel-title">Nowa sprawa (upload PDF)</h2>
+          <span class="case-meta">CPU · open-source</span>
+        </div>
+        <form id="upload-form" class="panel-body stack" novalidate>
+          <label id="dropzone" class="dropzone" for="pdf-files">
+            <input id="pdf-files" class="sr-only" type="file" accept=".pdf,application/pdf" multiple />
+            <div class="dropzone-title">Upuść pliki PDF sprawy lub wybierz z dysku</div>
+            <div class="dropzone-hint">Odwołanie, pełnomocnictwo, przelew (dokumenty spoza klas → pusty JSON {})</div>
+          </label>
+
+          <div id="upload-error" class="alert-err" role="alert" hidden>
+            <span id="upload-error-text"></span>
+            <button id="btn-upload-err-close" class="btn btn-sm" type="button">Zamknij</button>
+          </div>
+
+          <div id="file-chips" class="file-chips" aria-label="Wybrane pliki PDF"></div>
+
+          <div class="field-row">
+            <label class="field-label" for="case-name">Nazwa katalogu sprawy (opcjonalnie)</label>
+            <input id="case-name" class="input" placeholder="np. sprawa_kio_01" autocomplete="off" />
+          </div>
+
+          <div class="field-row">
+            <label class="field-label" for="checksum-mode">Polityka sum kontrolnych OCR</label>
+            <select id="checksum-mode" class="select">
+              <option value="confidence" selected>confidence (pewność OCR)</option>
+              <option value="strict">strict (zła suma → null)</option>
+            </select>
+          </div>
+
+          <div class="field-row">
+            <label class="field-label" for="visual-reader-mode">Czytelnik wizualny skanów (mmproj)</label>
+            <select id="visual-reader-mode" class="select">
+              <option value="off" selected>wyłączony (szybszy OCR 2 z 3)</option>
+              <option value="on">włączony (drugi odczyt obrazu linii)</option>
+            </select>
+            <div id="visual-reader-note" class="field-hint" hidden></div>
+          </div>
+
+          <div class="btn-row">
+            <button id="btn-start-extract" class="btn btn-primary" type="submit" disabled>Uruchom ekstrakcję</button>
+            <button id="btn-clear-files" class="btn btn-subtle" type="button" disabled>Wyczyść</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel" aria-labelledby="cases-h">
+        <div class="panel-head">
+          <h2 id="cases-h" class="panel-title">Sprawy w przestrzeni roboczej</h2>
+          <div class="btn-row">
+            <span id="cases-count" class="case-meta">0 spraw</span>
+            <button id="btn-refresh-cases" class="btn btn-sm" type="button">Odśwież</button>
+          </div>
+        </div>
+        <div id="cases-list" class="case-list" aria-busy="false">
+          <div class="panel-body case-meta">Ładowanie listy spraw…</div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="stack">
+      <div id="case-empty" class="panel">
+        <div class="panel-body empty-state">
+          <div class="hn-empty-tag">
+            <span class="hn-bar" aria-hidden="true"></span>
+            <span>WYZWANIE UZP · ODWOŁANIA2JSON</span>
+          </div>
+          <h2 class="panel-title">Brak wybranej sprawy</h2>
+          <p class="case-meta">
+            Wgraj pliki PDF sprawy w panelu po lewej (odwołanie, pełnomocnictwo, potwierdzenie przelewu) albo wybierz gotową sprawę z listy.
+            Dla każdego rozpoznanego dokumentu powstanie czysty JSON zgodny ze schematem UZP (dla dokumentów spoza klas — pusty obiekt <code>{}</code>) oraz pełny ślad ekstrakcji i lista <code>do_sprawdzenia.json</code>.
+          </p>
+        </div>
+      </div>
+
+      <article id="case-workspace" class="panel" hidden>
+        <div class="summary-strip">
+          <div class="summary-stats">
+            <strong>Sprawa: <span id="ws-case-name"></span></strong>
+            <span id="ws-doc-stats"></span>
+            <span id="ws-source-stats"></span>
+            <span id="ws-review-badge" class="pill">Do sprawdzenia: 0</span>
+          </div>
+          <div class="btn-row">
+            <button id="btn-rerun-case" class="btn btn-subtle btn-sm" type="button" hidden>Przetwórz z input/</button>
+            <a id="btn-download-zip" class="btn btn-subtle btn-sm" href="#" download hidden>Pobierz ZIP sprawy</a>
+          </div>
+        </div>
+
+        <div id="case-no-output" class="panel-body empty-state" hidden>
+          <p class="case-meta">
+            Sprawa zawiera pliki PDF w katalogu <code>input/</code>, ale nie została jeszcze przetworzona.
+            Kliknij <strong>Przetwórz z input/</strong> powyżej, aby uruchomić ekstrakcję.
+          </p>
+        </div>
+
+        <div id="case-results-wrap">
+          <div id="doc-strip" class="doc-strip" role="tablist" aria-label="Dokumenty w sprawie"></div>
+
+          <div id="doc-tabpanel" class="split" role="tabpanel" aria-labelledby="">
+            <div class="pane-left">
+              <div class="subbar">
+                <div class="subbar-title-group">
+                  <strong id="json-pane-title">Wynikowy JSON (schemat UZP)</strong>
+                  <span id="json-field-stats" class="pill" hidden></span>
+                </div>
+                <div class="btn-row">
+                  <button id="btn-copy-json" class="btn btn-sm btn-copy" type="button" disabled>Kopiuj JSON</button>
+                  <button id="btn-dl-json" class="btn btn-sm" type="button" disabled>Pobierz .json</button>
+                </div>
+              </div>
+              <div id="json-foreign-note" class="info-box" hidden></div>
+              <pre id="json-view" class="json-view"></pre>
+            </div>
+
+            <div class="pane-right">
+              <div class="subbar">
+                <div class="subtabs" role="tablist" aria-label="Widok weryfikacji">
+                  <button id="subtab-trace" class="subtab" type="button" role="tab" aria-selected="true" aria-controls="panel-trace">Ślad ekstrakcji (0)</button>
+                  <button id="subtab-review" class="subtab" type="button" role="tab" aria-selected="false" aria-controls="panel-review">Do sprawdzenia (0)</button>
+                  <button id="subtab-classify" class="subtab" type="button" role="tab" aria-selected="false" aria-controls="panel-classify">Klasyfikacja</button>
+                </div>
+                <span id="doc-timing" class="case-meta"></span>
+              </div>
+
+              <div id="panel-trace" role="tabpanel" aria-labelledby="subtab-trace">
+                <div id="trace-filter-strip" class="filter-strip" aria-label="Filtr statusu śladu">
+                  <button class="filter-btn" data-filter="all" type="button" aria-pressed="true">Wszystkie (0)</button>
+                  <button class="filter-btn" data-filter="warn" type="button" aria-pressed="false">Ostrzeżenia (0)</button>
+                  <button class="filter-btn" data-filter="rejected" type="button" aria-pressed="false">Odrzucone (0)</button>
+                  <button class="filter-btn" data-filter="ok" type="button" aria-pressed="false">OK (0)</button>
+                </div>
+
+                <div id="doc-review-callout" class="review-box" hidden></div>
+
+                <div id="trace-table-wrap" class="table-scroll">
+                  <table class="trace-table">
+                    <thead>
+                      <tr>
+                        <th>Pole</th>
+                        <th>Wartość</th>
+                        <th>Źródło / Pewność</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="trace-tbody"></tbody>
+                  </table>
+                </div>
+                <div id="trace-empty" class="panel-body case-meta" hidden></div>
+              </div>
+
+              <div id="panel-review" role="tabpanel" aria-labelledby="subtab-review" hidden>
+                <div id="review-list" class="panel-body stack"></div>
+                <div id="review-empty" class="panel-body case-meta" hidden>
+                  Brak odrzuconych pól i rozbieżności kontroli krzyżowej w tej sprawie.
+                </div>
+              </div>
+
+              <div id="panel-classify" role="tabpanel" aria-labelledby="subtab-classify" hidden>
+                <div class="table-scroll classify-wrap">
+                  <table class="trace-table classify-table">
+                    <thead>
+                      <tr>
+                        <th>Klasa YAML</th>
+                        <th>Punkty słów kluczowych</th>
+                        <th>Próg min_score</th>
+                        <th>Werdykt</th>
+                      </tr>
+                    </thead>
+                    <tbody id="classify-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <section id="panel-classes" class="yaml-section" role="tabpanel" aria-labelledby="tab-classes" hidden>
+    <div class="panel">
+      <div class="panel-head">
+        <h2 class="panel-title">Klasy dokumentów (YAML — bez zmian w kodzie)</h2>
+        <div class="btn-row">
+          <span id="yaml-valid-pill" class="pill">Gotowy do walidacji</span>
+          <button id="btn-new-class" class="btn btn-sm" type="button">+ Nowa klasa</button>
+        </div>
+      </div>
+      <div class="yaml-grid">
+        <div class="stack">
+          <div id="class-list" class="case-list class-list-box" aria-label="Lista klas YAML"></div>
+
+          <div id="yaml-alert" class="alert-err" role="alert" hidden>
+            <span id="yaml-alert-text"></span>
+            <div class="btn-row">
+              <button id="btn-retry-overwrite" class="btn btn-sm" type="button" hidden>Ponów z nadpisaniem</button>
+              <button id="btn-yaml-alert-close" class="btn btn-sm" type="button">Zamknij</button>
+            </div>
+          </div>
+
+          <div id="yaml-success" class="alert-ok" role="status" aria-live="polite" hidden></div>
+
+          <div id="yaml-preview-box" class="panel-body preview-box" hidden>
+            <div class="field-label" style="margin-bottom:6px;">Podgląd zwalidowanej klasy</div>
+            <div id="yaml-preview-content" class="case-meta"></div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="field-row">
+            <label class="field-label" for="yaml-filename">Nazwa pliku w configs/classes/ (edycja nazwy wygasza ewentualny konflikt 409)</label>
+            <input id="yaml-filename" class="input mono" placeholder="np. decyzja.yaml" autocomplete="off" />
+          </div>
+
+          <div class="field-row">
+            <label class="field-label" for="yaml-editor">Definicja klasy YAML</label>
+            <textarea id="yaml-editor" class="textarea" spellcheck="false"></textarea>
+          </div>
+
+          <div class="btn-row">
+            <button id="btn-validate-yaml" class="btn" type="button">Waliduj YAML</button>
+            <button id="btn-save-yaml" class="btn btn-primary btn-save" type="button" disabled>Zapisz klasę YAML</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="gov-footer">
+    <div class="gov-footer-inner">
+      <span>Urząd Zamówień Publicznych · Odwołania2json (100% open-source, lokalnie on-premise CPU)</span>
+      <span class="mono hn-footer-meta">HACKNATION 2026 · ZAPROGRAMUJ PRZYSZŁOŚĆ POLSKI · 21–22.11.2026 / BYDGOSZCZ</span>
+    </div>
+  </footer>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

@@ -290,3 +290,183 @@ def test_named_action_decides_dictionary_entry():
     assert pick("Zamawiający w dniu 3 lipca 2026 roku poinformował o odrzuceniu oferty złożonej przez Odwołującego.") == 1
     assert pick("Zamawiający w dniu 3 lipca 2026 roku opublikował dokumenty, w tym Opis Przedmiotu Zamówienia do SWZ.") is None   # dwie pozycje
     assert pick("Odwołujący wnosi o uwzględnienie odwołania.") is None
+
+
+def test_visual_reader_tolerates_spacing_and_crops_around_the_value():
+    from odwolania2json.vision import judge, value_span
+    assert judge("bzp", "2025/BZP00270698", "Nr ogłoszenia w BZP: 2025/BZP 00270698 z dnia 10 czerwca 2025 r.") == "zgodne"
+    assert judge("bzp", "2025/BZP 00270698", "Nr ogłoszenia w BZP: 2025/BZP 00270598 z dnia") == "inne"
+    assert judge("text", "BZP00270698", "2025/BZP 00270698") != "zgodne"            # fragment wyrazu nie potwierdza
+    line = "Krajowego Rejestru Sądowego pod numerem KRS 9993682204, posiadającej NIP 9999142626 oraz"
+    left, right = value_span(line, "krs", "9993682204")
+    assert left < line.index("9993682204") / len(line) and right > (line.index("9993682204") + 10) / len(line)
+    assert right - left < 0.5
+    assert value_span("KRS: 0000123456", "krs", "0000123456") is None               # krótka linia: w całości
+    assert value_span("Warszawa, dnia 16 czerwca 2025 r. oraz dalszy długi tekst tej samej linii pisma", "date", "2025-06-16")[0] < 0.1
+
+
+def test_first_listed_action_decides_kind_and_day():
+    import yaml
+    from odwolania2json.extract import decide_from_text, value_from_scope
+    spec = yaml.safe_load((APP / "configs/classes/odwolanie.yaml").read_text(encoding="utf-8"))["output"]["OdwolanieKIO"]
+    text = ("Poznań, dnia 11 września 2026 roku\nna podstawie ustawy z dnia 11 września 2019 r. wnoszę odwołanie\nwobec:\n"
+            "1. projektowanych postanowień umowy (PPU), stanowiących załącznik nr 4 do SWZ, opublikowanych w\n"
+            "dniu 14.03.2026 r.;\n2. zaniechania odrzucenia oferty wykonawcy Beta;\n"
+            "Informacja o zaskarżonej czynności została przekazana Odwołującemu w dniu 15.03.2026 r.")
+    assert decide_from_text(spec["czynnosc_powod_id"]["decide"], text)[0] == 12          # liczy się punkt pierwszy
+    assert value_from_scope(spec["czynnosc_dzien"]["decide"], text, "date")[0] == "14.03.2026"
+    other = text.replace("1. projektowanych postanowień umowy (PPU), stanowiących załącznik nr 4 do SWZ, opublikowanych w\ndniu 14.03.2026 r.;",
+                         "1. zaniechania wykluczenia wykonawcy Gamma;")
+    assert decide_from_text(spec["czynnosc_powod_id"]["decide"], other)[0] == 8
+    assert value_from_scope(spec["czynnosc_dzien"]["decide"], other, "date")[0] == "15.03.2026"   # zdanie o terminie
+    assert value_from_scope(spec["czynnosc_dzien"]["decide"], "Zamawiający w dniu 3 lipca 2026 roku odrzucił ofertę.", "date") is None
+
+
+def test_skewed_scan_is_laid_out_in_straightened_coordinates():
+    import math
+    from odwolania2json.pdfio import Line, fix_ocr, layout_text, skew_angle, straighten
+    width, height, angle = 1654, 2339, math.radians(-1.5)
+
+    def poly(x0, y0, x1, h=30):                      # linia tekstu na stronie obróconej o `angle`
+        dy = (x1 - x0) * math.tan(angle)
+        return [(x0, y0), (x1, y0 + dy), (x1, y0 + dy + h), (x0, y0 + h)]
+
+    rows = [("1. pierwszy punkt wyliczenia, który zajmuje całą szerokość strony i kończy się w", poly(140, 200, 1450)),
+            ("dniu 14.03.2026 r.;", poly(175, 236, 420)),
+            ("2. drugi punkt wyliczenia, równie długi jak pierwszy, na całą szerokość strony;", poly(140, 272, 1450)),
+            ("3. trzeci punkt wyliczenia, również długi, sięgający prawego marginesu strony;", poly(140, 308, 1450))]
+    found = skew_angle([p for _, p in rows], width)
+    assert abs(math.degrees(found) + 1.5) < 0.1
+    lines = []
+    for text, p in rows:
+        xs, ys = [x for x, _ in p], [y for _, y in p]
+        box = (min(xs) / width, min(ys) / height, max(xs) / width, max(ys) / height)
+        lay = straighten(p, found, width, height)
+        lines.append(Line(text, 0.99, (lay[1] + lay[3]) / 2, box, lay=lay))
+    assert layout_text(lines, []).splitlines() == [t for t, _ in rows]
+    crooked = [Line(l.text, l.conf, (l.box[1] + l.box[3]) / 2, l.box) for l in lines]      # bez prostowania linie się mieszają
+    assert layout_text(crooked, []).splitlines() != [t for t, _ in rows]
+    assert fix_ocr("Kalinex Logistyka Sp. z 0.o.") == "Kalinex Logistyka Sp. z o.o."
+    assert fix_ocr("Sp. z o.o. z 0.5 udziału") == "Sp. z o.o. z 0.5 udziału"
+
+
+def test_two_margin_labels_stay_with_their_own_rows():
+    from odwolania2json.pdfio import Line, layout_text
+    lines = [Line("Odwołujący:", 0.99, 0.250, (0.18, 0.243, 0.30, 0.258)),
+             Line("Alfa sp. k.", 0.99, 0.249, (0.33, 0.241, 0.59, 0.257)),
+             Line("ul. Polna 1", 0.99, 0.264, (0.33, 0.257, 0.53, 0.272)),
+             Line("Zamawiający:", 0.99, 0.280, (0.18, 0.273, 0.30, 0.288)),
+             Line("Gmina Beta", 0.99, 0.279, (0.33, 0.272, 0.60, 0.287)),
+             Line("ul. Leśna 2", 0.99, 0.294, (0.33, 0.287, 0.53, 0.302))]
+    assert layout_text(lines, []).splitlines() == ["Odwołujący: Alfa sp. k.", "ul. Polna 1", "Zamawiający: Gmina Beta", "ul. Leśna 2"]
+
+
+def test_spelling_follows_the_majority_of_reads_and_known_places():
+    from odwolania2json.textmatch import majority_spelling, restore_known
+    reads = ["reprezentowana przez: Lukasz Sosnowski – Prezes Zarządu\nŁukasz Sosnowski – Prezes Zarządu",
+             "reprezentowana przez: Łukasz Sosnowski\nŁukasz Sosnowski"]
+    assert majority_spelling("Lukasz Sosnowski", reads) == "Łukasz Sosnowski"
+    assert majority_spelling("Szymon Zawadżki", ["Szymon Zawadżki – Prokurent\nSzymon Zawadzki", "Szymon Zawadzki\nSzymon Zawadzki"]) == "Szymon Zawadzki"
+    assert majority_spelling("Jan Lis", ["Jan Lis", "Jan Liś"]) == "Jan Lis"                    # remis: bez zmian
+    assert majority_spelling("KRZYSZTOF JODLOWSKI", ["Krzysztof Jodłowski", "Krzysztof Jodłowski, KRZYSZTOF JODLOWSKI"]) == "KRZYSZTOF JODŁOWSKI"
+    assert restore_known("Lódź", ["Łódź", "Warszawa"]) == "Łódź"
+    assert restore_known("Zielonków", ["Łódź", "Warszawa"]) == "Zielonków"
+
+
+def test_dates_and_numbers_in_bank_printouts():
+    from odwolania2json.pdfio import fix_ocr
+    from odwolania2json.validators import norm_amount, norm_date
+    assert norm_date("2026.07.15").value == "2026-07-15"
+    assert norm_date("20 04 2026").value == "2026-04-20"
+    assert norm_date("DA.ZP.242.13.2026").value is None
+    assert norm_amount("-17,00 PLN").value == 17.0 and norm_amount("-10 000,00 PLN").value == 10000.0
+    assert fix_ocr("KRS: 9994328o29, Kraków (3o-799)") == "KRS: 9994328029, Kraków (30-799)"
+
+
+def test_representative_fields_need_the_flag_one_level_up():
+    odw = {"OdwolanieKIO": {"data": "2026-06-05"},
+           "Odwolujacy": [{"nazwa": "Alfa Sp. z o.o.", "przez-pelnomocnika": 0,
+                           "pelnomocnik": {"imie_nazwisko": None, "nazwa": None, "mail": "biuro@alfa.example"}},
+                          {"nazwa": "Beta S.A.", "przez-pelnomocnika": 1,
+                           "pelnomocnik": {"imie_nazwisko": "Jan Kowalski", "nazwa": None, "mail": "jan@kancelaria.example"}}]}
+    apply_field_rules(CLASSES["odwolanie"], odw, [])
+    assert odw["Odwolujacy"][0]["pelnomocnik"]["mail"] is None
+    assert odw["Odwolujacy"][1]["pelnomocnik"]["mail"] == "jan@kancelaria.example"
+
+
+def test_comma_inside_an_email_address_is_a_dot():
+    from odwolania2json.pdfio import fix_ocr
+    assert fix_ocr("e-mail: a,wrobel@wrobel-kancelaria.example, tel. 22") == "e-mail: a.wrobel@wrobel-kancelaria.example, tel. 22"
+    assert fix_ocr("jan@alfa.example, anna@beta.example") == "jan@alfa.example, anna@beta.example"
+
+
+def test_label_or_other_kind_of_data_is_not_a_value():
+    import re
+    import yaml
+    prz = yaml.safe_load((APP / "configs/classes/przelew.yaml").read_text(encoding="utf-8"))["output"]["przelew_bankowy"]
+    pel = yaml.safe_load((APP / "configs/classes/pelnomocnictwo.yaml").read_text(encoding="utf-8"))["output"]
+    hit = lambda spec, value: any(re.fullmatch(p, value, flags=re.IGNORECASE) for p in spec["reject"])
+    assert hit(prz["tytul"], "Szczegóły płatności") and hit(prz["tytul"], "Szczegóły zlecenia") and hit(prz["tytul"], "Tytułem")
+    assert not hit(prz["tytul"], "Wpis od odwołania, ZP/12/2026, REGIONALNE CENTRUM ZDROWIA")
+    assert not hit(prz["tytul"], "opłata skarbowa od pełnomocnictwa dla adw. Rafał Malinowski")
+    assert hit(prz["numer_transakcji"], "WPIS OD ODW., ZAM: KOMENDA WOJEWÓDZKA, PN/58/2026/DOS") and hit(prz["numer_transakcji"], "Opis")
+    assert not hit(prz["numer_transakcji"], "CEN9057564440515") and not hit(prz["numer_transakcji"], "305494")
+    person = pel["pelnomocnicy"][0]["imie_nazwisko"]
+    assert hit(person, "Kancelaria Radcy Prawnego Aleksandra Rybak") and hit(person, "Prezes Zarządu") and hit(person, "Jan Kowalski 2")
+    assert not hit(person, "Żaneta Rybak") and not hit(person, "Ewa Kowalska-Nowak") and not hit(person, "Jan Prezesowski")
+
+
+def test_numbered_principals_set_the_expected_list_length():
+    from odwolania2json.extract import expected_items
+    cls = {c.name: c for c in load_classes(Path(__file__).resolve().parent.parent / "configs" / "classes")}["pelnomocnictwo"]
+    consortium = ("PEŁNOMOCNICTWO\nWykonawcy wspólnie ubiegający się o udzielenie zamówienia (Konsorcjum): 1) Alfa sp. z o.o., "
+                  "KRS 9995540127; 2) Beta sp.j., KRS 9997108834 (dalej łącznie: „Mocodawca”), udzielają pełnomocnictwa: "
+                  "1. Jan Kowalski, 2. Anna Nowak")
+    assert expected_items(cls, consortium) == {"mocodawca": 2}
+    # jeden mocodawca, pełnomocnicy wyliczeni po zdaniu udzielającym pełnomocnictwa - reguła niczego nie wymusza
+    single = "PEŁNOMOCNICTWO\nAlfa sp. z o.o., KRS 9995540127, udziela pełnomocnictwa:\n1) Jan Kowalski,\n2) Anna Nowak"
+    assert expected_items(cls, single) == {}
+    # wyliczenie członków zarządu przed zdaniem udzielającym pełnomocnictwa to nie lista mocodawców
+    board = ("PEŁNOMOCNICTWO\nAlfa sp. z o.o., KRS 9995540127, NIP 9992284611, reprezentowana przez: 1) Jan Kowalski - Prezes "
+             "Zarządu, 2) Anna Nowak - Prokurent, udziela pełnomocnictwa: adw. Piotr Zalewski")
+    assert expected_items(cls, board) == {}
+
+
+def test_model_review_only_flags_or_vetoes_and_never_writes_a_value():
+    from odwolania2json.sanity import accept_correction, review
+
+    class Backend:
+        def __init__(self):
+            self.asked = []
+
+        def say(self, prompt, max_tokens=48):
+            self.asked.append(prompt)
+            return "NIE" if "Szczegóły płatności" in prompt else "TAK"
+
+    spec = {"przelew": {"tytul": {"type": "string", "check": "treść tytułu przelewu"},
+                        "kwota": {"type": "string"}}}
+    text = "Szczegóły płatności\nopłata skarbowa od pełnomocnictwa\nKwota 17,00 PLN"
+    for veto, kept in ((False, "Szczegóły płatności"), (True, None)):
+        data = {"przelew": {"tytul": "Szczegóły płatności", "kwota": "17,00"}}
+        trace = [{"pole": "przelew.tytul", "wartosc": "Szczegóły płatności", "status": "ok"}]
+        backend = Backend()
+        assert review(backend, text, spec, data, trace, veto=veto) == 1      # pytane są tylko pola z `check`
+        assert data["przelew"] == {"tytul": kept, "kwota": "17,00"}
+        assert trace[0]["status"] == ("niezweryfikowane" if veto else "ostrzezenie")
+    # korekta zapisu: tylko znaki mylone przez OCR, nigdy inne słowo ani inna forma prawna
+    assert accept_correction("Lukasz Sosnowski", "Łukasz Sosnowski")
+    assert accept_correction("Alfa sp. z 0.o.", "Alfa sp. z o.o.")
+    assert not accept_correction("Arkomed Serwis spolka akcyjna", "Arkomed Serwis sp. z o.o.")
+    assert not accept_correction("Kancelaria Bak sp.p.", "Kancelaria Bak sp. o. o.")
+
+
+def test_name_ends_before_seat_and_registry_details():
+    spec = CLASSES["pelnomocnictwo"].output["mocodawca"][0]["data"]["nazwa"]
+    text = ("PEŁNOMOCNICTWO\nArkomed Serwis spółka akcyjna z siedzibą w Białystok (15-629), ul. Kwiatowa 116/31, "
+            "wpisana do rejestru pod numerem KRS: 9991022552")
+    from odwolania2json.extract import check_leaf
+    from odwolania2json.pdfio import Document, Page
+    doc = Document("", [Page(1, "text", text)])
+    for raw in ("Arkomed Serwis spółka akcyjna z siedzibą w Białystok (15-629), ul. Kwiatowa 116/31",
+                "Arkomed Serwis spółka akcyjna, ul. Kwiatowa 116/31", "Arkomed Serwis spółka akcyjna"):
+        assert check_leaf(spec, raw, doc, [], "mocodawca[0].data.nazwa") == "Arkomed Serwis spółka akcyjna"
