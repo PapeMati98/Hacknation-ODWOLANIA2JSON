@@ -1,0 +1,38 @@
+{
+  "OdwolanieKIO": {
+    "data": "2026-09-17",
+    "czynnosc_dzien": "2026-09-12",
+    "czynnosc_powod_id": 11,
+    "czynnosc_opis": "Opis przedmiotu zamówienia (OPZ)",
+    "miejscowosc": "Warszawa"
+  },
+  "Odwolujacy": [
+    {
+      "krs": null,
+      "nazwa": "Aldomet Usługi Monika Jankowska",
+      "nip": "9990636373",
+      "regon": "999227320",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Dorota Baran",
+        "nazwa": "Kancelaria Adwokacka Lex Publica sp.p.",
+        "mail": "biuro@baran-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": null,
+      "nazwa": "Szpital Wojewódzki im. Jana Pawła II w Zamościu",
+      "nip": "9999541059",
+      "regon": "999632858",
+      "prowadzacy_postepowanie": null
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": "2026/BZP00078214/01",
+    "numer_postepowania": "DZP/513/26",
+    "numer_ted": null,
+    "tytul": "Wdrożenie zintegrowanego systemu informatycznego klasy ERP"
+  }
+}

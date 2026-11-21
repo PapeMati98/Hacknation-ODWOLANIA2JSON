@@ -1,0 +1,28 @@
+{
+  "mocodawca": [
+    {
+      "data": {
+        "imie_nazwisko": null,
+        "krs": "9993761310",
+        "nazwa": "Ekoprim Budownictwo Spółka z ograniczoną odpowiedzialnością",
+        "nip": "9993581589",
+        "typ": "osoba_prawna"
+      },
+      "podpisujacy": [
+        {
+          "imie_nazwisko": "Łukasz Sikora"
+        }
+      ]
+    }
+  ],
+  "pelnomocnicy": [
+    {
+      "imie_nazwisko": "Dorota Baran",
+      "pesel": "82022224727"
+    },
+    {
+      "imie_nazwisko": "Magdalena Lewandowska",
+      "pesel": null
+    }
+  ]
+}

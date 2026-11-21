@@ -1,0 +1,14 @@
+{
+  "rodzaj": "tekst",
+  "poziom": "trudna",
+  "powod_id": 7,
+  "cechy": {
+    "zarzut_na_2_stronie": true,
+    "pesel": true,
+    "bez_numeru_transakcji": true,
+    "odwolujacy_pierwszy": true,
+    "data_slownie": true,
+    "dlugi_tytul": true
+  },
+  "dokumenty_spoza_klas": []
+}

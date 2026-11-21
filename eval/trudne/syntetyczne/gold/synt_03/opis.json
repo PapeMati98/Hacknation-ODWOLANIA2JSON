@@ -1,0 +1,12 @@
+{
+  "rodzaj": "tekst",
+  "poziom": "zwykła",
+  "powod_id": 5,
+  "cechy": {
+    "dwoch_zamawiajacych": true,
+    "negatyw": "wezwanie"
+  },
+  "dokumenty_spoza_klas": [
+    "wezwanie_do_wyjasnien"
+  ]
+}

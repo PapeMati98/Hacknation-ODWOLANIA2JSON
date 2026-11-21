@@ -1,0 +1,38 @@
+{
+  "OdwolanieKIO": {
+    "data": "2026-05-23",
+    "czynnosc_dzien": "2026-05-13",
+    "czynnosc_powod_id": 6,
+    "czynnosc_opis": "Odpowiedzi/wyjaśnienia do SWZ",
+    "miejscowosc": "Rzeszów"
+  },
+  "Odwolujacy": [
+    {
+      "krs": "9997525131",
+      "nazwa": "Gratan Medical sp. z o.o.",
+      "nip": "9994265011",
+      "regon": "999978500",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Joanna Kaczmarek",
+        "nazwa": "Kaczmarek i Wspólnicy Kancelaria Prawna sp.k.",
+        "mail": "biuro@kaczmarek-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": "9999619175",
+      "nazwa": "Uniwersytet Przyrodniczy w Lublinie",
+      "nip": "9991567125",
+      "regon": "999969428",
+      "prowadzacy_postepowanie": null
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": "2026/BZP00617965",
+    "numer_postepowania": "IZ.272.2.2026.AK",
+    "numer_ted": null,
+    "tytul": "Świadczenie usług kompleksowego sprzątania obiektów w latach 2027–2029"
+  }
+}

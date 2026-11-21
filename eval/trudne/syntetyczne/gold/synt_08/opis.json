@@ -1,0 +1,11 @@
+{
+  "rodzaj": "skan",
+  "poziom": "zwykła",
+  "powod_id": 4,
+  "cechy": {
+    "skan": true,
+    "ted": true,
+    "data_slownie": true
+  },
+  "dokumenty_spoza_klas": []
+}

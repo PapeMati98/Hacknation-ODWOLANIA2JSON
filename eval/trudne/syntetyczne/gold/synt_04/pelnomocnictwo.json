@@ -1,0 +1,42 @@
+{
+  "mocodawca": [
+    {
+      "data": {
+        "imie_nazwisko": null,
+        "krs": "9995396304",
+        "nazwa": "Wikomed Logistyka sp.k.",
+        "nip": "9990649163",
+        "typ": "osoba_prawna"
+      },
+      "podpisujacy": [
+        {
+          "imie_nazwisko": "Magdalena Lewandowska"
+        }
+      ]
+    },
+    {
+      "data": {
+        "imie_nazwisko": null,
+        "krs": "9994550049",
+        "nazwa": "Trimex Logistyka sp. z o.o.",
+        "nip": "9990011874",
+        "typ": "osoba_prawna"
+      },
+      "podpisujacy": [
+        {
+          "imie_nazwisko": "Barbara Górecka"
+        }
+      ]
+    }
+  ],
+  "pelnomocnicy": [
+    {
+      "imie_nazwisko": "Michał Dąbrowski",
+      "pesel": null
+    },
+    {
+      "imie_nazwisko": "Joanna Kaczmarek",
+      "pesel": null
+    }
+  ]
+}

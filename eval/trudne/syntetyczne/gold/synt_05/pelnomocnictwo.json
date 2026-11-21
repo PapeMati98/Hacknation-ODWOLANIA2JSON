@@ -1,0 +1,28 @@
+{
+  "mocodawca": [
+    {
+      "data": {
+        "imie_nazwisko": "Monika Jankowska",
+        "krs": null,
+        "nazwa": "Aldomet Usługi Monika Jankowska",
+        "nip": "9990636373",
+        "typ": "osoba_fizyczna"
+      },
+      "podpisujacy": [
+        {
+          "imie_nazwisko": "Monika Jankowska"
+        }
+      ]
+    }
+  ],
+  "pelnomocnicy": [
+    {
+      "imie_nazwisko": "Dorota Baran",
+      "pesel": null
+    },
+    {
+      "imie_nazwisko": "Katarzyna Wiśniewska",
+      "pesel": null
+    }
+  ]
+}

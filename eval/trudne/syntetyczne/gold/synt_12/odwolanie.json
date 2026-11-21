@@ -1,0 +1,38 @@
+{
+  "OdwolanieKIO": {
+    "data": null,
+    "czynnosc_dzien": "2026-04-18",
+    "czynnosc_powod_id": 8,
+    "czynnosc_opis": "Zaniechanie wykluczenia wykonawcy",
+    "miejscowosc": null
+  },
+  "Odwolujacy": [
+    {
+      "krs": null,
+      "nazwa": "Termix Usługi Jakub Wróblewski",
+      "nip": "9997233603",
+      "regon": "999817799",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Michał Dąbrowski",
+        "nazwa": "Kancelaria Radcy Prawnego Michał Dąbrowski",
+        "mail": "biuro@dabrowski-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": "9996458922",
+      "nazwa": "Akademia Muzyczna w Bydgoszczy",
+      "nip": "9996051082",
+      "regon": "999317980",
+      "prowadzacy_postepowanie": null
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": "2026/BZP00701965",
+    "numer_postepowania": "DZP/320/26",
+    "numer_ted": null,
+    "tytul": "Dostawa pojazdu ratowniczo-gaśniczego z napędem 4x4"
+  }
+}

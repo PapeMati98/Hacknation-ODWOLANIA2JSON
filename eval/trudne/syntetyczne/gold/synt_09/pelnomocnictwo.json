@@ -1,0 +1,28 @@
+{
+  "mocodawca": [
+    {
+      "data": {
+        "imie_nazwisko": null,
+        "krs": "9994795896",
+        "nazwa": "Kerbud Technologie S.A.",
+        "nip": "9993082024",
+        "typ": "osoba_prawna"
+      },
+      "podpisujacy": [
+        {
+          "imie_nazwisko": "Katarzyna Wiśniewska"
+        }
+      ]
+    }
+  ],
+  "pelnomocnicy": [
+    {
+      "imie_nazwisko": "Krzysztof Pawlak",
+      "pesel": null
+    },
+    {
+      "imie_nazwisko": "Agnieszka Wójcik",
+      "pesel": null
+    }
+  ]
+}

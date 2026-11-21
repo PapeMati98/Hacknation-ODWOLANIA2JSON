@@ -1,0 +1,17 @@
+{
+  "rodzaj": "tekst",
+  "poziom": "trudna",
+  "powod_id": 12,
+  "cechy": {
+    "konsorcjum": true,
+    "odmiana": true,
+    "kancelaria_naglowek": true,
+    "data_na_koncu": true,
+    "times": true,
+    "negatyw": "przystapienie",
+    "dlugi_tytul": true
+  },
+  "dokumenty_spoza_klas": [
+    "przystapienie"
+  ]
+}
