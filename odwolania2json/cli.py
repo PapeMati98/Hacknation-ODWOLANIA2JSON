@@ -125,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     ocr_threads = max(1, (os.cpu_count() or 4) // workers) if workers > 1 else 0
     jobs = []
     api_pool = ThreadPoolExecutor(extractor.backend.parallel) if streaming else None
-    pending = []
+    pending: dict = {}                   # zadanie ekstrakcji -> jego argumenty (do ponowienia po błędzie API)
 
     def classified(pdf: Path, rel: Path, doc, cls_name, scores, seconds: float) -> None:
         record = {"plik": str(pdf), "skan": doc.is_scan, "klasa": cls_name, "punkty_klas": scores,
@@ -138,7 +138,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {rel}: dokument spoza klas -> pusty JSON {scores}", flush=True)
             write_trace(args.trace, rel, record)
         elif streaming:
-            pending.append(api_pool.submit(extract_one, cls_name, rel, doc, record))
+            job = (cls_name, rel, doc, record)
+            pending[api_pool.submit(extract_one, *job)] = job
         else:
             jobs.append((cls_name, rel, doc, record))
 
@@ -157,9 +158,19 @@ def main(argv: list[str] | None = None) -> int:
 
     # Etap 2: ekstrakcja. Model lokalny: po kolei, pogrupowana klasami - stała część promptu zostaje w cache modelu.
     if streaming:
+        again = []
         for future in as_completed(pending):
-            collect(future.result(), len(pending))
+            result = future.result()
+            if result[5] and "Model po API nie odpowiada" in result[5]:
+                again.append(pending[future])      # serwer nie odpowiedział: druga próba po całej partii
+            else:
+                collect(result, len(pending))
         api_pool.shutdown()
+        if again and not extractor.backend.unavailable:
+            print(f"Ponawiam {len(again)} dokumentów, przy których serwer modelu nie odpowiedział", flush=True)
+        for job in again:
+            job[3].pop("blad", None)
+            collect(extract_one(*job), len(pending))
     elif jobs:
         extractor = Extractor(make_backend(args.model, args.threads), final_check=args.final_check)
         print(f"Model: {extractor.backend.name}", flush=True)

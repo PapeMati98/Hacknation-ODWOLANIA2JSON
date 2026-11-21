@@ -540,6 +540,76 @@ def test_api_backend_fills_the_form_line_by_line_like_the_local_model():
     assert backend.last_stats["zapytania"] == 7
 
 
+def test_api_backend_przeczekuje_krotka_przerwe_serwera(monkeypatch):
+    """Restart serwera (502) nie gubi zapytania; zły klucz kończy od razu czytelnym komunikatem;
+    po dłuższej niedostępności kolejne zapytania już nie czekają."""
+    import json as _json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from odwolania2json import llm
+    from odwolania2json.llm import OpenAIBackend
+
+    state = {"fail": 3, "calls": 0}
+    naps = []
+    monkeypatch.setattr(llm.time, "sleep", naps.append)
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            state["calls"] += 1
+            if self.headers["Authorization"] != "Bearer dobry":
+                status, data = 401, b'{"error": "invalid or missing API key"}'
+            elif state["fail"] > 0:
+                state["fail"] -= 1
+                status, data = 502, b"error code: 502"
+            else:
+                status, data = 200, _json.dumps({"choices": [{"text": " ok"}], "usage": {"completion_tokens": 1}}).encode()
+            self.send_response(status)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_port}/v1"
+    try:
+        backend = OpenAIBackend(url, "model", "dobry")
+        assert backend._line("prompt", 5) == " ok"
+        assert naps == list(OpenAIBackend.RETRY_DELAYS[:3]) and not backend.unavailable
+
+        calls = state["calls"]
+        problem = OpenAIBackend(url, "model", "zly").ping()
+        assert "sprawdź O2J_API_KEY" in problem and state["calls"] == calls + 1      # bez ponawiania
+
+        state["fail"] = 10 ** 6
+        clock = [1000.0]
+        monkeypatch.setattr(llm.time, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(llm.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + s))
+        try:
+            backend._line("prompt", 5)
+            raise AssertionError("oczekiwany błąd")
+        except RuntimeError as exc:
+            assert "chwilowo niedostępny" in str(exc) and "API 502" in str(exc)
+        assert not backend.unavailable                       # ok. 2 min ponawiania to jeszcze nie awaria
+        clock[0] += OpenAIBackend.OUTAGE_LIMIT
+        assert backend.unavailable
+        calls = state["calls"]
+        try:
+            backend._line("prompt", 5)
+        except RuntimeError:
+            pass
+        assert state["calls"] == calls + 1                   # serwer leży od dawna: jedna próba, bez czekania
+        state["fail"] = 0
+        assert backend._line("prompt", 5) == " ok" and not backend.unavailable
+    finally:
+        server.shutdown()
+    assert "sprawdź adres" in OpenAIBackend("http://127.0.0.1:9/v1", "m", "k")._explain(
+        __import__("socket").gaierror("brak"))
+
+
 def test_ocr_po_api(tmp_path, monkeypatch):
     """Usługa OCR: klient dostaje linie, odczyty alternatywne i prostokąty; zły klucz kończy się odczytem lokalnym."""
     import threading

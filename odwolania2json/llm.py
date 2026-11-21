@@ -19,6 +19,8 @@ import json
 import os
 import re
 import http.client
+import socket
+import ssl
 import threading
 import time
 import urllib.parse
@@ -301,13 +303,18 @@ class OpenAIBackend:
     więc kolejne pytania o ten sam dokument kosztują tylko nowe tokeny.
     """
     DASHES = ("-", "\u2013", "\u2014")
-    retries = 4
+    # Przerwy między próbami (razem ok. 2 min): restart serwera albo chwilowy brak sieci nie gubi dokumentu.
+    RETRY_DELAYS = (0.5, 2, 4, 8, 15, 30, 30, 30)
+    PING_DELAYS = (0.5, 2, 4, 8)        # sprawdzenie na starcie: krócej, żeby zły adres wyszedł od razu
+    OUTAGE_LIMIT = 180                  # tyle sekund bez żadnej udanej odpowiedzi i kolejne zapytania już nie czekają
 
     def __init__(self, base_url: str, model: str, api_key: str | None = None, doc_chars: int = 24000):
         self.base = urllib.parse.urlsplit(base_url.rstrip("/"))
         self.model, self.api_key, self.doc_chars = model, api_key, doc_chars
         self.name = f"API {base_url} ({model})"
         self._local = threading.local()            # jedno trwałe połączenie i jedne statystyki na wątek
+        self._lock = threading.Lock()
+        self._down_since: float | None = None      # od kiedy serwer nie odpowiada (wspólne dla wątków)
         # Ile dokumentów naraz: serwer łączy zapytania w paczki, więc równoległość skraca czas całej partii.
         self.parallel = max(1, int(os.environ.get("O2J_API_PARALLEL", "8")))
 
@@ -324,19 +331,48 @@ class OpenAIBackend:
     def ping(self) -> str | None:
         """Sprawdza, czy serwer odpowiada jednym krótkim zapytaniem; zwraca opis problemu albo None."""
         try:
-            self._line("<|im_start|>user\nTest<|im_end|>\n<|im_start|>assistant\n", 1)
+            self._post("/completions", {"model": self.model, "max_tokens": 1, "temperature": 0,
+                                        "prompt": "<|im_start|>user\nTest<|im_end|>\n<|im_start|>assistant\n"},
+                       delays=self.PING_DELAYS)
         except RuntimeError as exc:
             return str(exc)
         return None
 
+    @property
+    def unavailable(self) -> bool:
+        """Serwer nie odpowiada dłużej niż OUTAGE_LIMIT - ponawianie dokumentów nie ma sensu."""
+        with self._lock:
+            return self._down_since is not None and time.monotonic() - self._down_since > self.OUTAGE_LIMIT
+
+    @staticmethod
+    def _explain(error: Exception | None) -> str:
+        """Przyczyna po ludzku; szczegół techniczny zostaje w nawiasie na końcu komunikatu."""
+        text = str(error)
+        if isinstance(error, ssl.SSLError):
+            return "nie udało się nawiązać bezpiecznego połączenia - sprawdź adres w O2J_API_BASE"
+        if isinstance(error, socket.gaierror):
+            return "nie znaleziono serwera - sprawdź adres w O2J_API_BASE i połączenie z internetem"
+        if isinstance(error, (TimeoutError, ConnectionError, OSError, http.client.HTTPException)):
+            return "brak połączenia z serwerem - sprawdź internet; serwer może być chwilowo niedostępny"
+        if text.startswith(("API 401", "API 403")):
+            return "serwer odrzucił klucz - sprawdź O2J_API_KEY (plik api.env)"
+        if text.startswith("API 404"):
+            return "serwer nie zna tego adresu albo modelu - sprawdź O2J_API_BASE i O2J_API_MODEL"
+        if text.startswith("API 429"):
+            return "serwer odrzuca zapytania z powodu limitu - zmniejsz O2J_API_PARALLEL"
+        if text.startswith("API 5"):
+            return "serwer modelu jest chwilowo niedostępny"
+        return "serwer zwrócił błąd"
+
     # ------------------------------------------------------------- HTTP
-    def _post(self, path: str, body: dict) -> dict:
+    def _post(self, path: str, body: dict, delays: tuple | None = None) -> dict:
+        delays = self.RETRY_DELAYS if delays is None else delays
         data = json.dumps(body).encode("utf-8")
         headers = {"Content-Type": "application/json", "Connection": "keep-alive"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         error: Exception | None = None
-        for attempt in range(self.retries):
+        for attempt in range(len(delays) + 1):
             conn = getattr(self._local, "conn", None)
             if conn is None:
                 factory = http.client.HTTPSConnection if self.base.scheme == "https" else http.client.HTTPConnection
@@ -346,6 +382,8 @@ class OpenAIBackend:
                 resp = conn.getresponse()
                 payload = resp.read()
                 if resp.status == 200:
+                    with self._lock:
+                        self._down_since = None
                     return json.loads(payload)
                 error = RuntimeError(f"API {resp.status}: {payload[:300]!r}")
                 if resp.status < 500 and resp.status != 429:
@@ -354,8 +392,15 @@ class OpenAIBackend:
                 error = exc
             conn.close()
             self._local.conn = None
-            time.sleep(1.5 * (attempt + 1))
-        raise RuntimeError(f"Model po API nie odpowiada ({self.name}): {error}")
+            now = time.monotonic()
+            with self._lock:
+                if self._down_since is None:
+                    self._down_since = now
+                down = now - self._down_since
+            if attempt == len(delays) or down > self.OUTAGE_LIMIT:
+                break
+            time.sleep(delays[attempt])
+        raise RuntimeError(f"Model po API nie odpowiada ({self.name}): {self._explain(error)} [{error}]")
 
     def _line(self, prompt: str, max_tokens: int) -> str:
         out = self._post("/completions", {"model": self.model, "prompt": prompt, "max_tokens": max_tokens,
