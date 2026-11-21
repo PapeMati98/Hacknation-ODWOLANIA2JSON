@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+models/
+*.gguf
+*.onnx
+output/*
+!output/.gitkeep
+input/*
+!input/.gitkeep
+.env
