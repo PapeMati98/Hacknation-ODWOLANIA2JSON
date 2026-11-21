@@ -5,7 +5,7 @@ name: odwolanie
 description: >-
   Odwołanie wnoszone do Prezesa Krajowej Izby Odwoławczej przez wykonawcę (Odwołującego)
   wobec czynności lub zaniechania Zamawiającego w postępowaniu o udzielenie zamówienia publicznego.
-pages: 3            # ile pierwszych stron czytać (kluczowe dane są zwykle na 1-3 stronie)
+pages: 2            # ile pierwszych stron czytać (dane stron i postępowania stoją na 1. stronie, zarzuty zaczynają się na 2.)
 classify:
   title: ["odwołanie"]
   keywords:
@@ -178,6 +178,7 @@ output:
     numer_bzp:
       type: string
       validator: bzp
+      or_from: numer_ted      # model myli czasem rubryki BZP i TED - rozstrzyga postać numeru
       desc: "Numer ogłoszenia w Biuletynie Zamówień Publicznych (rok/BZP i 8 cyfr). Nie numer TED."
     numer_postepowania:
       type: string
@@ -187,6 +188,7 @@ output:
     numer_ted:
       type: string
       validator: ted
+      or_from: numer_bzp      # model myli czasem rubryki BZP i TED - rozstrzyga postać numeru
       desc: "Numer ogłoszenia w Dzienniku Urzędowym UE (TED) (numer-rok albo rok/S numer-numer)."
     tytul:
       type: string

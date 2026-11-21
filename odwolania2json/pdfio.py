@@ -14,15 +14,22 @@ OCR (RapidOCR / PP-OCR ONNX, CPU):
   sztucznie powiększany. Skan przekrzywiony (kartka położona krzywo na skanerze) jest prostowany
   rachunkowo: kąt bierzemy z ramek długich linii, a wiersze i bloki układamy we współrzędnych
   wyprostowanych - inaczej długie linie zachodzą w pionie na sąsiednie i tekst się miesza.
-  4. pierwszy odczyt alternatywny jest wykonywany zawsze i zapamiętywany w całości: to drugi,
-     niezależny odczyt strony używany do kontroli krzyżowej wartości (extract.ocr_confirms);
-     trzeci odczyt (kolejna rozdzielczość) jest robiony tylko wtedy, gdy dwa pierwsze się różnią.
+  4. odczyt alternatywny jest też drugim, niezależnym odczytem strony do kontroli krzyżowej wartości
+     (extract.ocr_confirms). Każdy odczyt strony kosztuje tyle co pierwszy OCR, więc jest wykonywany
+     na żądanie i zapamiętywany: dla 1. strony od razu przy wczytaniu, dla dalszych stron i kolejnej
+     rozdzielczości dopiero wtedy, gdy wartości nie potwierdził odczyt już wykonany.
 """
 from __future__ import annotations
 
+import http.client
+import json
 import logging
 import math
+import os
 import re
+import threading
+import time
+import urllib.parse
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -37,6 +44,9 @@ REDACTED = "[ZAKRYTE]"
 A4_LONG_INCH = 11.69         # dłuższy bok A4 w calach
 
 _ENGINE = None
+_ENGINE_LOCK = threading.RLock()     # jeden odczyt OCR naraz w procesie
+OCR_THREADS = 0                      # wątki silnika OCR w tym procesie; 0 = wszystkie rdzenie (jeden proces czyta sam)
+OCR_CUDA = False                     # silnik OCR na karcie graficznej (usługa OCR na serwerze)
 
 
 def _engine():
@@ -44,7 +54,18 @@ def _engine():
     if _ENGINE is None:
         logging.getLogger("RapidOCR").setLevel(logging.ERROR)
         from rapidocr import RapidOCR
-        _ENGINE = RapidOCR()
+        # Kilka procesów czytających równolegle po jednym-dwóch wątkach daje większą przepustowość niż jeden
+        # proces na wszystkich rdzeniach (rozpoznawanie krótkich linii słabo skaluje się z liczbą wątków).
+        params: dict = {}
+        if OCR_THREADS:
+            params.update({"EngineConfig.onnxruntime.intra_op_num_threads": OCR_THREADS,
+                           "EngineConfig.onnxruntime.inter_op_num_threads": 1})
+        if OCR_CUDA:
+            params["EngineConfig.onnxruntime.use_cuda"] = True
+            # Linie mają różne szerokości: pełne przeszukiwanie algorytmów cuDNN dla każdego nowego kształtu
+            # trwałoby dłużej niż sam odczyt.
+            params["EngineConfig.onnxruntime.cuda_ep_cfg.cudnn_conv_algo_search"] = "DEFAULT"
+        _ENGINE = RapidOCR(params=params or None)
     return _ENGINE
 
 
@@ -79,6 +100,14 @@ class Document:
     def is_scan(self) -> bool:
         return any(p.source == "ocr" for p in self.pages)
 
+    def ensure_pages(self, count: int) -> None:
+        """Doczytuje kolejne strony, aż dokument ma `count` pierwszych stron (albo wszystkie, jeśli jest krótszy).
+        Klasa dokumentu jest znana po pierwszych stronach, a każda strona skanu kosztuje pełny OCR."""
+        if count <= len(self.pages):
+            return
+        pdf = pdfium.PdfDocument(self.path)
+        self.pages += _read_pages(self.path, pdf, range(len(self.pages), min(count, len(pdf))))
+
     def text(self, max_pages: int | None = None) -> str:
         pages = self.pages if max_pages is None else self.pages[:max_pages]
         return "\n\n".join(f"--- strona {p.number} ---\n{p.text}" for p in pages)
@@ -100,14 +129,17 @@ class Document:
         return image.crop((max(0, int(x0 * w - pad)), max(0, int(y0 * h - pad)),
                            min(w, int(x1 * w + pad)), min(h, int(y1 * h + pad))))
 
-    def alt_text(self, dpi: int = ALT_DPIS[0]) -> str:
-        """Niezależny odczyt OCR stron-skanów w podanej rozdzielczości (brakujący jest wykonywany na żądanie)."""
-        missing = [p for p in self.pages if p.source == "ocr" and dpi not in p.alt_reads]
-        if missing:
-            pdf = pdfium.PdfDocument(self.path)
-            for p in missing:
-                p.alt_reads[dpi] = _lines_text(_ocr_lines(_render(pdf[p.number - 1], dpi)))
-        return "\n".join(p.alt_reads[dpi] for p in self.pages if p.source == "ocr")
+    def alt_text(self, dpi: int = ALT_DPIS[0], pages: int | None = None) -> str:
+        """Niezależny odczyt OCR stron-skanów w podanej rozdzielczości (brakujący jest wykonywany na żądanie).
+        `pages` ogranicza odczyt do tylu pierwszych stron dokumentu."""
+        chosen = [p for p in (self.pages if pages is None else self.pages[:pages]) if p.source == "ocr"]
+        with _ENGINE_LOCK:
+            missing = [p for p in chosen if dpi not in p.alt_reads]
+            if missing:
+                pdf = pdfium.PdfDocument(self.path)
+                for p in missing:
+                    p.alt_reads[dpi] = _lines_text(_ocr_lines(_render(pdf[p.number - 1], dpi)))
+        return "\n".join(p.alt_reads[dpi] for p in chosen)
 
 
 OCR_FIXES = [
@@ -150,7 +182,8 @@ def straighten(points, angle: float, width: int, height: int) -> tuple[float, fl
 
 
 def _ocr_lines(img: np.ndarray, with_angle: bool = False):
-    res = _engine()(img)
+    with _ENGINE_LOCK:
+        res = _engine()(img)
     h, w = img.shape[:2]
     boxes = list(res.boxes) if res.boxes is not None else []
     angle = skew_angle(boxes, w)
@@ -236,8 +269,11 @@ def layout_text(lines: list[Line], redactions: list[tuple[float, float, float, f
     return "\n".join(out).strip()
 
 
-def ocr_page(page) -> tuple[list[Line], dict[int, str], list]:
-    """Zwraca (linie odczytu głównego po scaleniu skal, teksty odczytów alternatywnych wg DPI, czarne prostokąty)."""
+def ocr_page(page, all_reads: bool = False) -> tuple[list[Line], dict[int, str], list]:
+    """Zwraca (linie odczytu głównego po scaleniu skal, teksty odczytów alternatywnych wg DPI, czarne prostokąty).
+
+    Gdy strona ma linie niepewne, jest czytana ponownie w kolejnych rozdzielczościach, a linie, które nadal
+    są niepewne - z wycinka samej linii. `all_reads` - od razu komplet odczytów alternatywnych (usługa OCR)."""
     image = _render(page, BASE_DPI)
     lines, angle = _ocr_lines(image, with_angle=True)
     heights = sorted(l.lay[3] - l.lay[1] for l in lines if l.lay)
@@ -248,6 +284,8 @@ def ocr_page(page) -> tuple[list[Line], dict[int, str], list]:
                                   (x0 * width, y1 * height)], angle, width, height) for x0, y0, x1, y1 in redactions]
     reads: dict[int, str] = {}
     for dpi in ALT_DPIS:
+        if all(l.conf >= LOW_CONF for l in lines):
+            break                               # wszystkie linie pewne: kolejny odczyt tylko na żądanie
         alt = _ocr_lines(_render(page, dpi))
         reads[dpi] = _lines_text(alt)
         for i, line in enumerate(lines):
@@ -257,11 +295,13 @@ def ocr_page(page) -> tuple[list[Line], dict[int, str], list]:
             best = min(alt, key=lambda a: abs(a.y - line.y), default=None)
             if best and abs(best.y - line.y) < 0.006 and best.conf > line.conf:
                 lines[i] = best
-        if all(l.conf >= LOW_CONF for l in lines):
-            break
     for i, line in enumerate(lines):            # ostatnia próba: sama linia w innych powiększeniach
         if line.conf < LOW_CONF:
             lines[i] = _reread_line(image, line)
+    if all_reads:
+        for dpi in ALT_DPIS:
+            if dpi not in reads:
+                reads[dpi] = _lines_text(_ocr_lines(_render(page, dpi)))
     return lines, reads, redactions
 
 
@@ -301,15 +341,72 @@ def load(path: str, max_pages: int | None = None) -> Document:
     pdf = pdfium.PdfDocument(path)
     pages = []
     n = len(pdf) if max_pages is None else min(max_pages, len(pdf))
-    for i in range(n):
-        pg = pdf[i]
-        text = pg.get_textpage().get_text_range().replace("\r\n", "\n").strip()
+    return Document(path, _read_pages(path, pdf, range(n)))
+
+
+def _read_pages(path: str, pdf, indices) -> list[Page]:
+    """Strony o podanych indeksach: warstwa tekstowa, a gdy jej brak - OCR (usługa po API albo silnik lokalny)."""
+    pages: dict[int, Page] = {}
+    scans = []
+    for i in indices:
+        text = pdf[i].get_textpage().get_text_range().replace("\r\n", "\n").strip()
         if len(text) >= MIN_TEXT_CHARS:
-            pages.append(Page(i + 1, "text", text))
-            continue
-        lines, reads, redactions = ocr_page(pg)
+            pages[i] = Page(i + 1, "text", text)
+        else:
+            scans.append(i)
+    remote = remote_ocr(path, scans) if scans and os.environ.get("O2J_OCR_BASE") else None
+    for i in scans:
+        lines, reads, redactions = remote[i] if remote else ocr_page(pdf[i])
         for line in lines:
             line.page = i + 1
         bad = sum(1 for l in lines if l.conf < LOW_CONF)
-        pages.append(Page(i + 1, "ocr", layout_text(lines, redactions), lines, bad, reads, redactions))
-    return Document(path, pages)
+        pages[i] = Page(i + 1, "ocr", layout_text(lines, redactions), lines, bad, reads, redactions)
+    return [pages[i] for i in indices]
+
+
+_REMOTE_WARNED = False
+
+
+def remote_ocr(path: str, indices: list[int]) -> dict[int, tuple] | None:
+    """OCR stron przez usługę po API (odwolania2json.ocr_server): ten sam kod odczytu co lokalnie, tylko na
+    serwerze. Zwraca {indeks strony: (linie, odczyty alternatywne, czarne prostokąty)} albo None, gdy usługa
+    nie odpowiada - wtedy strony czyta silnik lokalny (wolniej, wynik ten sam)."""
+    global _REMOTE_WARNED
+    base = urllib.parse.urlsplit(os.environ["O2J_OCR_BASE"].rstrip("/"))
+    key = os.environ.get("O2J_OCR_KEY") or os.environ.get("O2J_API_KEY")
+    headers = {"Content-Type": "application/pdf"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    with open(path, "rb") as fh:
+        body = fh.read()
+    error: Exception | None = None
+    for attempt in range(3):
+        factory = http.client.HTTPSConnection if base.scheme == "https" else http.client.HTTPConnection
+        conn = factory(base.netloc, timeout=180)
+        try:
+            conn.request("POST", f"{base.path}/ocr?pages={','.join(map(str, indices))}", body=body, headers=headers)
+            resp = conn.getresponse()
+            payload = resp.read()
+            if resp.status == 200:
+                out = {}
+                for index, page in json.loads(payload)["pages"].items():
+                    lines = [Line(text, conf, y, tuple(box) if box else None, 0, tuple(lay) if lay else None, angle)
+                             for text, conf, y, box, lay, angle in page["lines"]]
+                    out[int(index)] = (lines, {int(dpi): text for dpi, text in page["reads"].items()},
+                                       [tuple(r) for r in page["redactions"]])
+                if all(i in out for i in indices):
+                    return out
+                error = RuntimeError("odpowiedź bez wszystkich stron")
+            else:
+                error = RuntimeError(f"HTTP {resp.status}: {payload[:200]!r}")
+                if resp.status < 500 and resp.status != 429:
+                    break
+        except (OSError, http.client.HTTPException, ValueError, KeyError) as exc:
+            error = exc
+        finally:
+            conn.close()
+        time.sleep(1.5 * (attempt + 1))
+    if not _REMOTE_WARNED:
+        _REMOTE_WARNED = True
+        print(f"UWAGA: usługa OCR nie odpowiada ({error}) - skany czyta silnik lokalny (wolniej).", flush=True)
+    return None

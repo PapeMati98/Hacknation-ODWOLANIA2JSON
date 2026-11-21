@@ -18,10 +18,101 @@ import ctypes
 import json
 import os
 import re
+import http.client
+import threading
 import time
-import urllib.request
+import urllib.parse
 
 HEADER_RE = re.compile(r"^#+\s*([\w\-]+)(?:\s+(\d+))?")
+
+
+def guided_fill(session, sections: list[tuple[str, bool, list[str]]], max_value_tokens: int = 200, max_items: int = 8,
+                signed: frozenset[str] = frozenset(), min_items: dict[str, int] | None = None) -> str:
+    """Prowadzone wypełnianie formularza - wspólne dla modelu lokalnego i modelu po API.
+
+    `session.force(tekst)` dopisuje tekst do kontekstu modelu (nagłówki sekcji i klucze podaje kod),
+    `session.gen(limit, dash_shortcut)` generuje tekst do końca linii (model podaje same wartości).
+    Zwraca tekst formularza (`## Sekcja`, linie `klucz: wartość`).
+    """
+    lines: list[str] = []
+    bol = True              # czy kontekst jest na początku linii
+
+    def force(text: str):
+        nonlocal bol
+        session.force(text)
+        bol = text.endswith("\n")
+
+    def newline():
+        if not bol:
+            force("\n")
+
+    def ask(key: str) -> str:
+        force(f"{key}:")
+        value = session.gen(max_value_tokens, key not in signed)
+        lines.append(f"{key}: {value}")
+        return value
+
+    header_in_context = False
+    stray = None            # nagłówek, który model sam zaczął po zakończeniu listy
+    for name, is_list, keys in sections:
+        index = 1
+        header_in_context = stray == name.casefold()
+        stray = None
+        skip_first: str | None = None
+        items: list[dict[str, str]] = []           # wypełnione już elementy listy
+        while True:
+            header = f"## {name} {index}" if is_list else f"## {name}"
+            if not header_in_context:
+                newline()
+                force(header + "\n")
+            header_in_context = False
+            start = len(lines)
+            lines.append(header)
+            current: dict[str, str] = {}
+            repeated = False
+            for key in keys:
+                if skip_first is not None and key == keys[0]:
+                    value, skip_first = skip_first, None      # wartość już wygenerowana w linii decyzyjnej
+                    lines.append(f"{key}: {value}")
+                else:
+                    newline()
+                    value = ask(key)
+                known = not any(v not in ("", "-") for v in current.values())
+                current[key] = value
+                # Pierwsza niepusta wartość elementu identyfikuje podmiot. Jeśli taki podmiot już jest
+                # na liście, model zaczął się powtarzać - kończymy listę i odrzucamy powtórzenie.
+                if known and value not in ("", "-") and any(
+                        p.get(key, "").casefold() == value.casefold() for p in items):
+                    repeated = True
+                    break
+            if is_list and items and (repeated or all(v in ("", "-") for v in current.values())):
+                del lines[start:]
+                break
+            items.append(current)
+            if not is_list or index >= max_items:
+                break
+            if index < (min_items or {}).get(name, 0):
+                # Z tekstu wynika, że podmiotów jest więcej (reguła listy z YAML): kolejny element jest
+                # wymuszony. Pusty albo powtórzony element i tak zostanie odrzucony wyżej.
+                index += 1
+                continue
+            # Czy dokument zawiera kolejny podmiot tej sekcji? Model sam zaczyna następną linię.
+            newline()
+            line = session.gen(60, False)
+            bol = not line
+            m = HEADER_RE.match(line)
+            first = re.match(rf"^{re.escape(keys[0])}\s*:\s*(.*)$", line)
+            if m and m.group(1).casefold() == name.casefold():
+                index += 1
+                header_in_context = True          # nagłówek kolejnego elementu jest już w kontekście
+            elif first and first.group(1).strip() not in ("", "-"):
+                index += 1                        # model pominął nagłówek i od razu podał pierwsze pole
+                header_in_context = True
+                skip_first = first.group(1).strip()
+            else:
+                stray = m.group(1).casefold() if m else None
+                break
+    return "\n".join(lines)
 
 
 class LlamaCppBackend:
@@ -164,97 +255,26 @@ class LlamaCppBackend:
         self._feed(doc + tail)
         self.last_stats.update(prompt_tokeny=self._n_past, czas_czytania_s=round(time.perf_counter() - t0, 2))
 
-        lines: list[str] = []
         pending = ""            # tekst wymuszony, jeszcze niepodany modelowi
-        bol = True              # czy kontekst (razem z pending) jest na początku linii
+        backend = self
 
-        def flush():
-            nonlocal pending
-            if pending:
-                self._feed(self._tok(pending))
-                pending = ""
+        class Session:
+            def force(self, text: str) -> None:
+                nonlocal pending
+                pending += text
 
-        def force(text: str):
-            nonlocal pending, bol
-            pending += text
-            bol = text.endswith("\n")
+            def gen(self, max_tokens: int, dash_shortcut: bool) -> str:
+                nonlocal pending
+                if pending:
+                    backend._feed(backend._tok(pending))
+                    pending = ""
+                value, deferred = backend._line(max_tokens, dash_shortcut=dash_shortcut)
+                pending += deferred
+                return value
 
-        def newline():
-            if not bol:
-                force("\n")
-
-        def ask(key: str) -> str:
-            nonlocal pending, bol
-            force(f"{key}:")
-            flush()
-            value, deferred = self._line(max_value_tokens, dash_shortcut=key not in signed)
-            pending += deferred
-            lines.append(f"{key}: {value}")
-            return value
-
-        header_in_context = False
-        stray = None            # nagłówek, który model sam zaczął po zakończeniu listy
-        for name, is_list, keys in sections:
-            index = 1
-            header_in_context = stray == name.casefold()
-            stray = None
-            skip_first: str | None = None
-            items: list[dict[str, str]] = []           # wypełnione już elementy listy
-            while True:
-                header = f"## {name} {index}" if is_list else f"## {name}"
-                if not header_in_context:
-                    newline()
-                    force(header + "\n")
-                header_in_context = False
-                start = len(lines)
-                lines.append(header)
-                current: dict[str, str] = {}
-                repeated = False
-                for key in keys:
-                    if skip_first is not None and key == keys[0]:
-                        value, skip_first = skip_first, None      # wartość już wygenerowana w linii decyzyjnej
-                        lines.append(f"{key}: {value}")
-                    else:
-                        newline()
-                        value = ask(key)
-                    known = not any(v not in ("", "-") for v in current.values())
-                    current[key] = value
-                    # Pierwsza niepusta wartość elementu identyfikuje podmiot. Jeśli taki podmiot już jest
-                    # na liście, model zaczął się powtarzać - kończymy listę i odrzucamy powtórzenie.
-                    if known and value not in ("", "-") and any(
-                            p.get(key, "").casefold() == value.casefold() for p in items):
-                        repeated = True
-                        break
-                if is_list and items and (repeated or all(v in ("", "-") for v in current.values())):
-                    del lines[start:]
-                    break
-                items.append(current)
-                if not is_list or index >= max_items:
-                    break
-                if index < (min_items or {}).get(name, 0):
-                    # Z tekstu wynika, że podmiotów jest więcej (reguła listy z YAML): kolejny element jest
-                    # wymuszony. Pusty albo powtórzony element i tak zostanie odrzucony wyżej.
-                    index += 1
-                    continue
-                # Czy dokument zawiera kolejny podmiot tej sekcji? Model sam zaczyna następną linię.
-                newline()
-                flush()
-                line, _ = self._line(60)
-                bol = not line
-                m = HEADER_RE.match(line)
-                first = re.match(rf"^{re.escape(keys[0])}\s*:\s*(.*)$", line)
-                if m and m.group(1).casefold() == name.casefold():
-                    index += 1
-                    header_in_context = True          # nagłówek kolejnego elementu jest już w kontekście
-                elif first and first.group(1).strip() not in ("", "-"):
-                    index += 1                        # model pominął nagłówek i od razu podał pierwsze pole
-                    header_in_context = True
-                    skip_first = first.group(1).strip()
-                else:
-                    stray = m.group(1).casefold() if m else None
-                    break
+        answer = guided_fill(Session(), sections, max_value_tokens, max_items, signed, min_items)
         self.last_stats["czas_s"] = round(time.perf_counter() - t0, 2)
-        return "\n".join(lines)
+        return answer
 
     # ------------------------------------------------------------- swobodna generacja (zapas)
     def complete(self, system: str, user: str, prefill: str, max_tokens: int) -> str:
@@ -274,21 +294,110 @@ class LlamaCppBackend:
 
 
 class OpenAIBackend:
-    def __init__(self, base_url: str, model: str, api_key: str | None = None):
-        self.url = base_url.rstrip("/") + "/chat/completions"
-        self.model, self.api_key = model, api_key
-        self.name = f"API {base_url} ({model})"
+    """Model open source serwowany przez API zgodne z OpenAI (vLLM, llama.cpp server).
 
-    def complete(self, system: str, user: str, prefill: str, max_tokens: int) -> str:
-        body = {"model": self.model, "temperature": 0, "max_tokens": max_tokens,
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                "chat_template_kwargs": {"enable_thinking": False}}
-        headers = {"Content-Type": "application/json"}
+    Formularz jest wypełniany tak samo jak lokalnie: kod podaje nagłówki i klucze, a model dopisuje
+    wartość do końca linii (`/completions` z surowym promptem). Serwer pamięta wspólny początek promptu,
+    więc kolejne pytania o ten sam dokument kosztują tylko nowe tokeny.
+    """
+    DASHES = ("-", "\u2013", "\u2014")
+    retries = 4
+
+    def __init__(self, base_url: str, model: str, api_key: str | None = None, doc_chars: int = 24000):
+        self.base = urllib.parse.urlsplit(base_url.rstrip("/"))
+        self.model, self.api_key, self.doc_chars = model, api_key, doc_chars
+        self.name = f"API {base_url} ({model})"
+        self._local = threading.local()            # jedno trwałe połączenie i jedne statystyki na wątek
+        # Ile dokumentów naraz: serwer łączy zapytania w paczki, więc równoległość skraca czas całej partii.
+        self.parallel = max(1, int(os.environ.get("O2J_API_PARALLEL", "8")))
+
+    @property
+    def last_stats(self) -> dict:
+        if not hasattr(self._local, "stats"):
+            self._local.stats = {}
+        return self._local.stats
+
+    @last_stats.setter
+    def last_stats(self, value: dict) -> None:
+        self._local.stats = value
+
+    def ping(self) -> str | None:
+        """Sprawdza, czy serwer odpowiada jednym krótkim zapytaniem; zwraca opis problemu albo None."""
+        try:
+            self._line("<|im_start|>user\nTest<|im_end|>\n<|im_start|>assistant\n", 1)
+        except RuntimeError as exc:
+            return str(exc)
+        return None
+
+    # ------------------------------------------------------------- HTTP
+    def _post(self, path: str, body: dict) -> dict:
+        data = json.dumps(body).encode("utf-8")
+        headers = {"Content-Type": "application/json", "Connection": "keep-alive"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        req = urllib.request.Request(self.url, data=json.dumps(body).encode("utf-8"), headers=headers)
-        with urllib.request.urlopen(req, timeout=600) as resp:
-            content = json.loads(resp.read())["choices"][0]["message"]["content"] or ""
+        error: Exception | None = None
+        for attempt in range(self.retries):
+            conn = getattr(self._local, "conn", None)
+            if conn is None:
+                factory = http.client.HTTPSConnection if self.base.scheme == "https" else http.client.HTTPConnection
+                conn = self._local.conn = factory(self.base.netloc, timeout=300)
+            try:
+                conn.request("POST", self.base.path + path, body=data, headers=headers)
+                resp = conn.getresponse()
+                payload = resp.read()
+                if resp.status == 200:
+                    return json.loads(payload)
+                error = RuntimeError(f"API {resp.status}: {payload[:300]!r}")
+                if resp.status < 500 and resp.status != 429:
+                    break
+            except (OSError, http.client.HTTPException) as exc:
+                error = exc
+            conn.close()
+            self._local.conn = None
+            time.sleep(1.5 * (attempt + 1))
+        raise RuntimeError(f"Model po API nie odpowiada ({self.name}): {error}")
+
+    def _line(self, prompt: str, max_tokens: int) -> str:
+        out = self._post("/completions", {"model": self.model, "prompt": prompt, "max_tokens": max_tokens,
+                                          "temperature": 0, "stop": ["\n", "<|im_end|>"]})
+        self.last_stats["wygenerowane"] = self.last_stats.get("wygenerowane", 0) + out.get("usage", {}).get("completion_tokens", 0)
+        self.last_stats["zapytania"] = self.last_stats.get("zapytania", 0) + 1
+        return out["choices"][0]["text"]
+
+    # ------------------------------------------------------------- prowadzone wypełnianie formularza
+    def fill(self, system: str, static_user: str, doc_text: str, sections: list[tuple[str, bool, list[str]]],
+             max_value_tokens: int = 200, max_items: int = 8, signed: frozenset[str] = frozenset(),
+             min_items: dict[str, int] | None = None) -> str:
+        t0 = time.perf_counter()
+        self.last_stats = {"wygenerowane": 0, "zapytania": 0}
+        prompt = (f"<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{static_user}{doc_text[:self.doc_chars]}"
+                  f"<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n")
+        backend = self
+
+        class Session:
+            def force(self, text: str) -> None:
+                nonlocal prompt
+                prompt += text
+
+            def gen(self, max_tokens: int, dash_shortcut: bool) -> str:
+                nonlocal prompt
+                text = backend._line(prompt, max_tokens)
+                value = text.strip()
+                if dash_shortcut and value.startswith(backend.DASHES):
+                    text, value = " -", "-"          # pusta wartość - jak w trybie lokalnym
+                prompt += text
+                return value
+
+        answer = guided_fill(Session(), sections, max_value_tokens, max_items, signed, min_items)
+        self.last_stats["czas_s"] = round(time.perf_counter() - t0, 2)
+        return answer
+
+    def complete(self, system: str, user: str, prefill: str, max_tokens: int) -> str:
+        out = self._post("/chat/completions", {
+            "model": self.model, "temperature": 0, "max_tokens": max_tokens,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "chat_template_kwargs": {"enable_thinking": False}})
+        content = out["choices"][0]["message"]["content"] or ""
         return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
 

@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import extract, pdfio
@@ -34,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", default=os.environ.get("O2J_MODEL", str(APP_ROOT / "models" / "Qwen3.5-4B-Q4_K_M.gguf")))
     ap.add_argument("--threads", type=int, default=int(os.environ.get("O2J_THREADS", default_threads())))
     ap.add_argument("--only", help="przetwórz tylko te sprawy (lista po przecinku)")
+    ap.add_argument("--ocr-workers", type=int, default=int(os.environ.get("O2J_OCR_WORKERS", default_ocr_workers())),
+                    help="ile procesów naraz wczytuje dokumenty (OCR skanów); 1 = bez procesów roboczych")
     ap.add_argument("--ocr-checksum", choices=("confidence", "strict"), default=extract.CHECKSUM_POLICY,
                     help="numer ze skanu ze złą sumą kontrolną: confidence = zostaje z ostrzeżeniem przy wysokiej "
                          "pewności odczytu, inaczej null (domyślnie); strict = zawsze null")
@@ -56,22 +59,77 @@ def main(argv: list[str] | None = None) -> int:
     pdfs = sorted(p for p in args.input.rglob("*.pdf") if not only or p.parent.name in only)
     print(f"Dokumentów: {len(pdfs)} | klasy: {', '.join(by_name)}", flush=True)
     t_all = time.perf_counter()
-
-    # Etap 1: wczytanie (tekst lub OCR) i klasyfikacja wszystkich dokumentów.
-    jobs = []
     cases: dict[Path, dict] = {}         # sprawa -> wyniki dokumentów i pozycje do sprawdzenia
-    max_pages = max(c.pages for c in classes)
+    todo = []
     for pdf in pdfs:
         rel = pdf.relative_to(args.input).with_suffix(".json")
         if args.resume and restore(args, rel, cases):
             print(f"  {rel}: wynik już jest (--resume)", flush=True)
-            continue
+        else:
+            todo.append((pdf, rel))
+
+    # Model po API (O2J_API_BASE): ekstrakcja biegnie równolegle z czytaniem kolejnych dokumentów.
+    extractor = None
+    if os.environ.get("O2J_API_BASE"):
+        backend = make_backend(args.model, args.threads)
+        problem = backend.ping()
+        if problem is None:
+            extractor = Extractor(backend, final_check=args.final_check)
+            print(f"Model: {backend.name} | dokumentów naraz: {backend.parallel}", flush=True)
+        elif Path(args.model).is_file():
+            print(f"UWAGA: {problem}\n       Przechodzę na model lokalny {Path(args.model).name} (wolniej).", flush=True)
+            os.environ.pop("O2J_API_BASE")
+        else:
+            print(f"BŁĄD: {problem}", flush=True)
+            return 2
+    streaming = extractor is not None
+
+    done = 0
+    failed: list[str] = []
+    t_extract = time.perf_counter()
+
+    def extract_one(cls_name: str, rel: Path, doc, record: dict):
         t0 = time.perf_counter()
-        doc = pdfio.load(str(pdf), max_pages=max_pages)
-        cls_name, scores = classify(doc, classes)
+        error = None
+        try:
+            data, trace, answer = extractor.run(doc, by_name[cls_name])
+        except Exception as exc:                     # jeden dokument nie może zatrzymać całej partii
+            data, trace, answer, error = {}, [], "", f"{type(exc).__name__}: {exc}"
+            record["blad"] = error
+        out_path = args.output / rel
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        record.update(pola=trace, odpowiedz_modelu=answer, czas_ekstrakcji_s=round(time.perf_counter() - t0, 2),
+                      model=getattr(extractor.backend, "last_stats", None))
+        write_trace(args.trace, rel, record)
+        return cls_name, rel, data, trace, time.perf_counter() - t0, error
+
+    def collect(result, total: int) -> None:
+        nonlocal done
+        cls_name, rel, data, trace, seconds, error = result
+        done += 1
+        if error:
+            failed.append(str(rel))
+            print(f"  [{done}/{total}] {rel}: BŁĄD - {error} -> pusty JSON", flush=True)
+            return
+        flagged = sum(1 for t in trace if t["status"] in ("nieczytelne", "niezweryfikowane"))
+        left = (time.perf_counter() - t_extract) / done * (total - done)
+        print(f"  [{done}/{total}] {rel}: {cls_name} | {seconds:.1f} s | pola odrzucone: {flagged}"
+              f" | pozostało ok. {left / 60:.0f} min", flush=True)
+        case = cases.setdefault(rel.parent, {"results": [], "review": []})
+        case["results"].append((rel.name, cls_name, data))
+        case["review"] += review_entries(rel.name, trace)
+
+    # Etap 1: wczytanie (tekst lub OCR) i klasyfikacja. Skany czyta kilka procesów naraz.
+    workers = max(1, min(args.ocr_workers, len(todo) or 1))
+    ocr_threads = max(1, (os.cpu_count() or 4) // workers) if workers > 1 else 0
+    jobs = []
+    api_pool = ThreadPoolExecutor(extractor.backend.parallel) if streaming else None
+    pending = []
+
+    def classified(pdf: Path, rel: Path, doc, cls_name, scores, seconds: float) -> None:
         record = {"plik": str(pdf), "skan": doc.is_scan, "klasa": cls_name, "punkty_klas": scores,
-                  "nieczytelne_linie": sum(p.unreadable for p in doc.pages),
-                  "czas_wczytania_s": round(time.perf_counter() - t0, 2)}
+                  "nieczytelne_linie": sum(p.unreadable for p in doc.pages), "czas_wczytania_s": seconds}
         if cls_name is None:
             # Wymóg organizatora (README, 21.11): dokument spoza klas dostaje pusty plik JSON.
             out_path = args.output / rel
@@ -79,38 +137,45 @@ def main(argv: list[str] | None = None) -> int:
             out_path.write_text("{}", encoding="utf-8")
             print(f"  {rel}: dokument spoza klas -> pusty JSON {scores}", flush=True)
             write_trace(args.trace, rel, record)
+        elif streaming:
+            pending.append(api_pool.submit(extract_one, cls_name, rel, doc, record))
         else:
             jobs.append((cls_name, rel, doc, record))
-    print(f"Wczytano i sklasyfikowano w {time.perf_counter() - t_all:.0f} s; do ekstrakcji: {len(jobs)}", flush=True)
 
-    # Etap 2: ekstrakcja pogrupowana klasami - stała część promptu zostaje w cache modelu.
-    extractor = Extractor(make_backend(args.model, args.threads), final_check=args.final_check)
-    print(f"Model: {extractor.backend.name}", flush=True)
-    if args.visual_reader == "on":
-        if not hasattr(extractor.backend, "enable_vision") or not Path(args.mmproj).is_file():
-            print(f"Czytelnik wizualny wyłączony: brak pliku {args.mmproj} albo model nie jest lokalny", flush=True)
-        else:
-            from .vision import VisualReader
-            extractor.backend.enable_vision(args.mmproj)
-            extract.VISUAL_READER = VisualReader(extractor.backend)
-            print(f"Czytelnik wizualny: {Path(args.mmproj).name}", flush=True)
-    t_extract = time.perf_counter()
-    for done, (cls_name, rel, doc, record) in enumerate(sorted(jobs, key=lambda j: (j[0], str(j[1]))), 1):
-        t0 = time.perf_counter()
-        data, trace, answer = extractor.run(doc, by_name[cls_name])
-        out_path = args.output / rel
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        record.update(pola=trace, odpowiedz_modelu=answer, czas_ekstrakcji_s=round(time.perf_counter() - t0, 2),
-                      model=getattr(extractor.backend, "last_stats", None))
-        write_trace(args.trace, rel, record)
-        flagged = sum(1 for t in trace if t["status"] in ("nieczytelne", "niezweryfikowane"))
-        left = (time.perf_counter() - t_extract) / done * (len(jobs) - done)
-        print(f"  [{done}/{len(jobs)}] {rel}: {cls_name} | {time.perf_counter() - t0:.1f} s | pola odrzucone: {flagged}"
-              f" | pozostało ok. {left / 60:.0f} min", flush=True)
-        case = cases.setdefault(rel.parent, {"results": [], "review": []})
-        case["results"].append((rel.name, cls_name, data))
-        case["review"] += review_entries(rel.name, trace)
+    if workers == 1:
+        _init_reader(str(args.classes), 0)
+        for pdf, rel in todo:
+            classified(pdf, rel, *read_document(str(pdf)))
+    else:
+        with ProcessPoolExecutor(workers, initializer=_init_reader, initargs=(str(args.classes), ocr_threads)) as readers:
+            reads = {readers.submit(read_document, str(pdf)): (pdf, rel) for pdf, rel in todo}
+            for future in as_completed(reads):
+                classified(*reads[future], *future.result())
+    waiting = len(pending) if streaming else len(jobs)
+    print(f"Wczytano i sklasyfikowano w {time.perf_counter() - t_all:.0f} s (procesy OCR: {workers}); "
+          f"do ekstrakcji: {waiting}", flush=True)
+
+    # Etap 2: ekstrakcja. Model lokalny: po kolei, pogrupowana klasami - stała część promptu zostaje w cache modelu.
+    if streaming:
+        for future in as_completed(pending):
+            collect(future.result(), len(pending))
+        api_pool.shutdown()
+    elif jobs:
+        extractor = Extractor(make_backend(args.model, args.threads), final_check=args.final_check)
+        print(f"Model: {extractor.backend.name}", flush=True)
+        if args.visual_reader == "on":
+            if not hasattr(extractor.backend, "enable_vision") or not Path(args.mmproj).is_file():
+                print(f"Czytelnik wizualny wyłączony: brak pliku {args.mmproj} albo model nie jest lokalny", flush=True)
+            else:
+                from .vision import VisualReader
+                extractor.backend.enable_vision(args.mmproj)
+                extract.VISUAL_READER = VisualReader(extractor.backend)
+                print(f"Czytelnik wizualny: {Path(args.mmproj).name}", flush=True)
+        t_extract = time.perf_counter()
+        for job in sorted(jobs, key=lambda j: (j[0], str(j[1]))):
+            collect(extract_one(*job), len(jobs))
+    if failed:
+        print(f"UWAGA: {len(failed)} dokumentów bez wyniku (pusty JSON): {', '.join(failed)}", flush=True)
 
     # Etap 3: kontrola krzyżowa między dokumentami sprawy i lista pozycji do sprawdzenia przez człowieka.
     rules = load_rules(args.cross_checks)
@@ -123,8 +188,37 @@ def main(argv: list[str] | None = None) -> int:
         path.write_text(json.dumps({"sprawa": str(case_dir), "pozycje": items}, ensure_ascii=False, indent=1,
                                    default=str), encoding="utf-8")
     print(f"Pozycji do sprawdzenia: {total} (trace/<sprawa>/do_sprawdzenia.json)", flush=True)
-    print(f"Gotowe: {len(pdfs)} dokumentów w {time.perf_counter() - t_all:.0f} s", flush=True)
+    seconds = time.perf_counter() - t_all
+    print(f"Gotowe: {len(pdfs)} dokumentów w {seconds:.0f} s ({seconds / max(1, len(pdfs)):.1f} s na dokument)", flush=True)
     return 0
+
+
+CLASSIFY_PAGES = 2          # tyle pierwszych stron wystarcza do rozpoznania klasy
+_CLASSES: list = []
+
+
+def _init_reader(classes_dir: str, ocr_threads: int) -> None:
+    """Przygotowanie procesu czytającego dokumenty: klasy z YAML i liczba wątków silnika OCR."""
+    global _CLASSES
+    pdfio.OCR_THREADS = ocr_threads
+    _CLASSES = load_classes(Path(classes_dir))
+
+
+def read_document(path: str):
+    """Wczytanie i klasyfikacja jednego dokumentu. Najpierw strony potrzebne do rozpoznania klasy, potem -
+    tylko jeśli klasa ich wymaga (`pages` w YAML) - kolejne: każda strona skanu to pełny OCR."""
+    t0 = time.perf_counter()
+    doc = pdfio.load(path, max_pages=CLASSIFY_PAGES)
+    cls_name, scores = classify(doc, _CLASSES)
+    if cls_name is not None:
+        doc.ensure_pages(next(c.pages for c in _CLASSES if c.name == cls_name))
+        doc.alt_text(pdfio.ALT_DPIS[0], 1)      # drugi odczyt 1. strony skanu: potrzebny prawie zawsze (daty, kwoty, numery)
+    return doc, cls_name, scores, round(time.perf_counter() - t0, 2)
+
+
+def default_ocr_workers() -> int:
+    """Procesy czytające skany: po jednym na rdzeń fizyczny (zwykle połowa rdzeni logicznych), najwyżej 8."""
+    return max(1, min(8, (os.cpu_count() or 4) // 2))
 
 
 def default_threads() -> int:

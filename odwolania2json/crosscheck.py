@@ -21,6 +21,7 @@ from pathlib import Path
 import yaml
 
 from .config import DocClass, is_leaf
+from .validators import VALIDATORS
 from .textmatch import ID_LENGTHS, fold
 
 REJECTED = ("nieczytelne", "niezweryfikowane")
@@ -130,7 +131,7 @@ def resolve_duplicates(cls: DocClass, data: dict, trace: list[dict], text: str) 
                                    + (f"; w dokumencie leży przy polu {keep}" if keep else "; nie da się ustalić właściwego"))
 
 
-def apply_field_rules(cls: DocClass, data: dict, trace: list[dict]) -> None:
+def apply_field_rules(cls: DocClass, data: dict, trace: list[dict], text: str = "") -> None:
     """Reguły zależności między polami jednego dokumentu, zapisane w YAML klasy:
 
     requires: <pole obok>  - pole ma sens tylko razem z innym (np. miejscowość z nagłówka tylko z datą);
@@ -138,6 +139,9 @@ def apply_field_rules(cls: DocClass, data: dict, trace: list[dict]) -> None:
                              tylko wtedy, gdy strona działa przez pełnomocnika),
     not_in: <ścieżka>      - wartość nie może powtarzać wartości z innej listy (np. podpisujący
                              pełnomocnictwo nie może być jednocześnie pełnomocnikiem).
+    or_from: <pole obok>   - model pomylił rubryki: gdy pole jest puste, a wartość wpisana w polu obok nie
+                             przeszła tamtego walidatora, lecz przechodzi walidator tego pola i stoi w dokumencie,
+                             wartość trafia tutaj (numer TED wpisany w rubrykę BZP).
     Pole łamiące regułę dostaje null i trafia na listę do sprawdzenia.
     """
     by_path = {t["pole"]: t for t in trace}
@@ -149,6 +153,18 @@ def apply_field_rules(cls: DocClass, data: dict, trace: list[dict]) -> None:
 
     for path, parent, key, spec, chain in list(walk_parents(cls.output, data)):
         value = parent.get(key)
+        source = spec.get("or_from")
+        if value is None and source and parent.get(source) is None:
+            other = by_path.get(path[: len(path) - len(key)] + source)
+            raw = (other or {}).get("surowa")
+            if raw:
+                check = VALIDATORS[spec.get("validator", "text")](str(raw), (other or {}).get("zrodlo") == "ocr")
+                if check.value is not None and check.status == "ok" and all(
+                        group in text for group in re.findall(r"\d{3,}", str(check.value))):
+                    parent[key] = value = check.value
+                    if path in by_path:
+                        by_path[path].update(wartosc=value, status="dopasowano", surowa=raw,
+                                             uwaga=f"wartość {raw!r} wpisana przez model w polu {source}")
         if value is None:
             continue
         need = spec.get("requires")

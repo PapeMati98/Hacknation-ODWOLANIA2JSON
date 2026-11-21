@@ -123,7 +123,7 @@ class Extractor:
         trace: list[dict] = []
         data = postprocess(cls.output, raw, doc, trace, "")
         resolve_duplicates(cls, data, trace, doc.text(max_pages=None))
-        apply_field_rules(cls, data, trace)
+        apply_field_rules(cls, data, trace, doc.text(max_pages=None))
         apply_derived(cls, cls.output, data, data)
         return data, trace
 
@@ -190,8 +190,35 @@ def parse_sheet(answer: str, cls: DocClass) -> dict:
     # elementy list bez żadnej wartości (model powielił pustą sekcję) są pomijane
     for s in cls.sections():
         if s.is_list and s.name in raw:
-            raw[s.name] = [item for item in raw[s.name] if _has_value(item)] or raw[s.name][:1]
+            items = [part for item in raw[s.name] for part in _split_merged(item, s)]
+            raw[s.name] = [item for item in items if _has_value(item)] or items[:1]
     return raw
+
+
+def _split_merged(item: dict, section: Section) -> list[dict]:
+    """Model wpisał kilka podmiotów w jednym elemencie listy, oddzielając je znakiem ' | '
+    (tak zapisuje się kilka wartości pola wielokrotnego) - każdy podmiot staje się osobnym elementem.
+    Pole elementu, którego nie da się przypisać do jednego z podmiotów, zostaje puste."""
+    plain = [f for f in section.fields if not f.multi_inner]
+    lead = next((f for f in plain if isinstance(_get_path(item, f.key), str) and " | " in _get_path(item, f.key)), None)
+    if lead is None:
+        return [item]
+    count = len(_get_path(item, lead.key).split(" | "))
+    out = []
+    for i in range(count):
+        part: dict = {}
+        for f in section.fields:
+            value = _get_path(item, f.key)
+            if f.multi_inner:
+                value = value if i == 0 else []
+            elif isinstance(value, str) and " | " in value:
+                pieces = [p.strip() for p in value.split(" | ")]
+                value = pieces[i] if len(pieces) == count and pieces[i].casefold() not in EMPTY else None
+            elif value is not None and count > 1:
+                value = None
+            _set_path(part, f.key, value)
+        out.append(part)
+    return out
 
 
 def _set_path(target: dict, dotted: str, value):
@@ -248,6 +275,11 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
             value = found[0]
 
     if value is None or (isinstance(value, str) and (value.strip().casefold() in EMPTY or UNREADABLE in value)):
+        if spec.get("decide") and (spec.get("type") == "integer" or "enum_from" in spec):
+            # Model nie podał pozycji słownika, a dokument nazywa ją wprost we wskazanym zdaniu.
+            decided = decide_from_text(spec["decide"], doc.text(max_pages=None))
+            if decided is not None:
+                return done(decided[0], "dopasowano", f"{value!r} -> pozycja słownika wskazana wprost w zdaniu: {decided[1]!r}")
         return done(None, "brak")
     if REDACTED in str(value):
         return done(None, "brak", "pole zakryte (anonimizacja)")
@@ -305,6 +337,7 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
     if from_ocr:
         result, status, note, confidence = cross_check_ocr(doc, kind, value, text, result, status, note)
         if result is not None and (kind == "person" or (kind == "text" and len(str(result).split()) <= 3)):
+            doc.alt_text(ALT_DPIS[0], 1)
             reads = [text] + [read for page in doc.pages for read in page.alt_reads.values()]
             voted = majority_spelling(str(result), reads)
             if voted != result:
@@ -445,6 +478,10 @@ def ocr_confirms(doc: Document, probe: str, text: str) -> str | None:
     """
     verdicts = []
     for dpi in ALT_DPIS:
+        # Większość wartości stoi na 1. stronie: jeśli jej drugi odczyt zawiera wartość, dalszych stron
+        # nie trzeba czytać ponownie (werdykt "zgodne" nie zależy od reszty tekstu).
+        if second_read(probe, text, doc.alt_text(dpi, 1)) == "zgodne":
+            return "zgodne"
         verdict = second_read(probe, text, doc.alt_text(dpi))
         if verdict == "zgodne":
             return verdict

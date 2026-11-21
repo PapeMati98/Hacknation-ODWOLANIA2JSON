@@ -35,7 +35,7 @@ output:
     kwota:
       type: number
       validator: amount
-      desc: "Kwota przelewu; przepisz tak, jak jest zapisana, razem ze znakiem i walutą (np. '-17,00 PLN'). Nie opłata ani prowizja banku."
+      desc: "Kwota przelewu - przy etykiecie 'Kwota', 'Kwota przelewu', 'Kwota operacji' albo 'Wartość'; przepisz tak, jak jest zapisana (ze znakiem minus i walutą, jeśli są). Nie opłata ani prowizja banku (etykiety 'Opłata', 'Prowizja')."
     na_rachunek:
       type: string
       validator: nrb
@@ -54,7 +54,7 @@ output:
       verify_in_text: true
       reject: *etykiety
       check: "treść tytułu przelewu (za co jest płatność), a nie etykieta rubryki"
-      desc: "Tytuł przelewu przepisany dokładnie i w całości (także gdy zajmuje kilka linii) - treść przy etykiecie 'Tytuł', 'Tytułem', 'Opis', 'Szczegóły płatności' albo 'Tytuł operacji'. Wpisz samą treść, nie etykietę."
+      desc: "Tytuł przelewu przepisany dokładnie i w całości (także gdy zajmuje kilka linii) - treść przy etykiecie 'Tytuł', 'Tytułem', 'Opis', 'Szczegóły płatności' albo 'Tytuł operacji'. Wpisz samą treść, nie etykietę; numery i kody stojące w tytule (numer postępowania, kod płatności) są jego częścią. Gdy w dokumencie jest etykieta 'Tytuł', tytułem jest tekst po niej; nazwa rodzaju operacji (np. 'PRZELEW ELIXIR - ONLINE', 'Przelew krajowy') nie jest tytułem."
     z_rachunku:
       type: string
       validator: nrb

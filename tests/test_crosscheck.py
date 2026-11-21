@@ -470,3 +470,100 @@ def test_name_ends_before_seat_and_registry_details():
     for raw in ("Arkomed Serwis spółka akcyjna z siedzibą w Białystok (15-629), ul. Kwiatowa 116/31",
                 "Arkomed Serwis spółka akcyjna, ul. Kwiatowa 116/31", "Arkomed Serwis spółka akcyjna"):
         assert check_leaf(spec, raw, doc, [], "mocodawca[0].data.nazwa") == "Arkomed Serwis spółka akcyjna"
+
+
+def test_named_action_fills_the_dictionary_entry_the_model_left_empty():
+    from odwolania2json.extract import check_leaf
+    from odwolania2json.pdfio import Document, Page
+    spec = CLASSES["odwolanie"].output["OdwolanieKIO"]["czynnosc_powod_id"]
+    text = ("ODWOŁANIE\nwnoszę odwołanie wobec:\n1. zaniechania odrzucenia oferty wykonawcy Alfa S.A., pomimo że oferta ta "
+            "podlega odrzuceniu;\n2. wyboru oferty najkorzystniejszej.")
+    doc = Document("", [Page(1, "text", text)])
+    assert check_leaf(spec, None, doc, [], "OdwolanieKIO.czynnosc_powod_id") == 7
+    assert check_leaf(spec, None, Document("", [Page(1, "text", "ODWOŁANIE\nbez wskazania czynności")]), [], "x") is None
+
+
+def test_several_people_in_one_list_item_become_separate_items():
+    raw = parse_sheet("## mocodawca 1\ndata.nazwa: Alfa sp. j.\npodpisujacy: Jan Kowalski | Anna Nowak\n"
+                      "## pelnomocnicy 1\nimie_nazwisko: Piotr Zalewski | Ewa Lis\npesel: -", CLASSES["pelnomocnictwo"])
+    assert [p["imie_nazwisko"] for p in raw["pelnomocnicy"]] == ["Piotr Zalewski", "Ewa Lis"]
+    assert len(raw["mocodawca"]) == 1 and len(raw["mocodawca"][0]["podpisujacy"]) == 2
+
+
+def test_ted_number_written_into_the_bzp_field_moves_to_its_own_field():
+    data = {"ZamowieniePubliczne": {"numer_bzp": None, "numer_ted": None}}
+    trace = [{"pole": "ZamowieniePubliczne.numer_bzp", "surowa": "2026/S189-999923", "wartosc": None, "status": "nieczytelne",
+              "zrodlo": "warstwa_tekstowa"},
+             {"pole": "ZamowieniePubliczne.numer_ted", "surowa": None, "wartosc": None, "status": "brak", "zrodlo": "warstwa_tekstowa"}]
+    apply_field_rules(CLASSES["odwolanie"], data, trace, "nr referencyjny sprawy: SWZ.613.2026, TED: 2026/S189-999923")
+    assert data["ZamowieniePubliczne"] == {"numer_bzp": None, "numer_ted": "999923-2026"}
+    assert trace[1]["status"] == "dopasowano"
+
+
+def test_api_backend_fills_the_form_line_by_line_like_the_local_model():
+    import json as _json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from odwolania2json.llm import OpenAIBackend
+
+    script = iter([" Alfa sp. z o.o.", " -", "## strona 2", " Beta S.A.", " 9990000000", "", " -17,00 PLN"])
+    prompts = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = _json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            prompts.append(body["prompt"])
+            assert self.headers["Authorization"] == "Bearer klucz-testowy" and body["stop"][0] == "\n"
+            data = _json.dumps({"choices": [{"text": next(script)}], "usage": {"completion_tokens": 3}}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        backend = OpenAIBackend(f"http://127.0.0.1:{server.server_port}/v1", "model", "klucz-testowy")
+        answer = backend.fill("system", "opis\n", "tekst dokumentu", [("strona", True, ["nazwa", "krs"]), ("przelew", False, ["kwota"])],
+                              signed=frozenset({"kwota"}))
+    finally:
+        server.shutdown()
+    assert answer == ("## strona 1\nnazwa: Alfa sp. z o.o.\nkrs: -\n## strona 2\nnazwa: Beta S.A.\nkrs: 9990000000\n"
+                      "## przelew\nkwota: -17,00 PLN")
+    assert prompts[0].endswith("</think>\n\n## strona 1\nnazwa:")
+    assert prompts[1].endswith("## strona 1\nnazwa: Alfa sp. z o.o.\nkrs:")
+    assert prompts[3].endswith("krs: -\n## strona 2\nnazwa:")          # nagłówek podany przez model zostaje w kontekście
+    assert backend.last_stats["zapytania"] == 7
+
+
+def test_ocr_po_api(tmp_path, monkeypatch):
+    """Usługa OCR: klient dostaje linie, odczyty alternatywne i prostokąty; zły klucz kończy się odczytem lokalnym."""
+    import threading
+    from odwolania2json import ocr_server, pdfio
+
+    def fake_read(data, indices):
+        assert data == b"%PDF-test"
+        return {"pages": {str(i): {"lines": [["Sygn. akt KIO 12/26", 0.97, 0.1, (0.1, 0.09, 0.5, 0.11), (0.1, 0.09, 0.5, 0.11), 0.0]],
+                                   "reads": {"150": "Sygn. akt KIO 12/26", "250": "Sygn. akt KIO 12/26"},
+                                   "redactions": [(0.2, 0.3, 0.4, 0.32)]} for i in indices}}
+
+    monkeypatch.setattr(ocr_server, "read_pdf", fake_read)
+    server = ocr_server.make_server("127.0.0.1", 0, "tajny-klucz")
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    pdf = tmp_path / "skan.pdf"
+    pdf.write_bytes(b"%PDF-test")
+    monkeypatch.setenv("O2J_OCR_BASE", f"http://127.0.0.1:{server.server_address[1]}")
+    try:
+        monkeypatch.setenv("O2J_OCR_KEY", "tajny-klucz")
+        pages = pdfio.remote_ocr(str(pdf), [0, 1])
+        lines, reads, redactions = pages[1]
+        assert lines[0].text == "Sygn. akt KIO 12/26" and lines[0].box == (0.1, 0.09, 0.5, 0.11)
+        assert reads == {150: "Sygn. akt KIO 12/26", 250: "Sygn. akt KIO 12/26"} and redactions == [(0.2, 0.3, 0.4, 0.32)]
+        monkeypatch.setenv("O2J_OCR_KEY", "inny")
+        assert pdfio.remote_ocr(str(pdf), [0]) is None
+    finally:
+        server.shutdown()
