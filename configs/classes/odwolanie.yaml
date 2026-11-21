@@ -31,20 +31,33 @@ dictionaries:
     9: Decyzja o unieważnieniu postępowania
     10: Zaniechanie unieważnienia postępowania
     11: Opis przedmiotu zamówienia (OPZ)
+hints:        # podpowiedzi dla modelu: jak czynność bywa opisana w odwołaniu
+  powody:
+    1: Zamawiający odrzucił ofertę Odwołującego lub poinformował o jej odrzuceniu
+    2: Zamawiający wybrał ofertę najkorzystniejszą innego wykonawcy lub ogłosił wybór
+    3: Zamawiający wykluczył Odwołującego z postępowania
+    4: Zamawiający opublikował ogłoszenie i SWZ; odwołanie dotyczy treści SWZ
+    5: Zamawiający zmienił (zmodyfikował) treść SWZ
+    6: Zamawiający udzielił odpowiedzi na pytania lub wyjaśnień treści SWZ
+    7: Zamawiający nie odrzucił oferty innego wykonawcy, choć powinien
+    8: Zamawiający nie wykluczył innego wykonawcy, choć powinien
+    9: Zamawiający unieważnił postępowanie
+    10: Zamawiający nie unieważnił postępowania, choć powinien
+    11: Zamawiający udostępnił opis przedmiotu zamówienia; odwołanie dotyczy treści OPZ
 output:
   OdwolanieKIO:
     data:
       type: string
       validator: date
-      desc: "Data z nagłówka pierwszej strony (np. 'Warszawa, dnia 16 czerwca 2025 r.'), format YYYY-MM-DD. Brak daty w nagłówku = null."
+      desc: "Data sporządzenia odwołania z nagłówka pierwszej strony (linia typu 'Warszawa, dnia 16 czerwca 2025 r.'). Przepisz datę tak, jak jest zapisana. Brak daty w nagłówku = '-'."
     czynnosc_dzien:
       type: string
       validator: date
-      desc: "Data czynności Zamawiającego, której dotyczy PIERWSZY zarzut (np. dzień publikacji SWZ, wyboru oferty, unieważnienia), YYYY-MM-DD; brak wiarygodnej daty = null."
+      desc: "Dzień, w którym Zamawiający dokonał zaskarżonej czynności (albo jej zaniechał) - zwykle w zdaniu 'Zamawiający w dniu ... <co zrobił lub czego nie zrobił>' przed zarzutami lub w pierwszym zarzucie. Przepisz datę tak, jak jest zapisana. To nie jest data ustawy ani data odwołania."
     czynnosc_powod_id:
       type: integer
       enum_from: powody
-      desc: "Rodzaj zaskarżonej czynności ustalony WYŁĄCZNIE na podstawie pierwszego zarzutu; wybierz numer ze słownika."
+      desc: "Rodzaj zaskarżonej czynności lub zaniechania Zamawiającego, której dotyczy pierwszy zarzut (zdanie 'Zamawiający w dniu ...' i treść pierwszego zarzutu)."
     czynnosc_opis:
       derive: {dictionary: powody, key: OdwolanieKIO.czynnosc_powod_id}
     miejscowosc:
@@ -110,7 +123,8 @@ output:
       prowadzacy_postepowanie:
         type: integer
         enum: [0, 1]
-        desc: "null gdy jest jeden Zamawiający; przy kilku: 1 gdy oznaczony jako prowadzący/lider postępowania, inaczej 0."
+        only_if_multiple: true      # przy jednym Zamawiającym pole zawsze null
+        desc: "Tylko gdy Zamawiających jest kilku: 1 jeśli ten jest oznaczony jako prowadzący lub lider postępowania, inaczej 0."
   ZamowieniePubliczne:
     numer_bzp:
       type: string

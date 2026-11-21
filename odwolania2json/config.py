@@ -1,6 +1,10 @@
-"""Ładowanie klas dokumentów z YAML i budowa schematu JSON dla modelu.
+"""Ładowanie klas dokumentów z YAML oraz budowa formularza i opisu pól dla modelu.
 
 Nowa klasa dokumentu = nowy plik configs/classes/<nazwa>.yaml. Kod nie wymaga zmian.
+
+Struktura `output` w YAML odwzorowuje wynikowy JSON. Model nie generuje JSON-a, tylko
+wypełnia zwięzły formularz (sekcje `## Nazwa`, linie `klucz: wartość`), który jest
+zamieniany na JSON przez kod - to kilkukrotnie mniej tokenów na wyjściu niż JSON.
 """
 from __future__ import annotations
 
@@ -8,6 +12,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+
+@dataclass
+class Field:
+    key: str                 # klucz w formularzu, np. "pelnomocnik.imie_nazwisko"
+    spec: dict
+    multi_inner: str | None = None   # dla listy jednopolowej: nazwa pola elementu
+
+
+@dataclass
+class Section:
+    name: str
+    is_list: bool
+    fields: list[Field]
 
 
 @dataclass
@@ -19,51 +37,74 @@ class DocClass:
     negative: dict[str, float]
     output: dict
     dictionaries: dict = field(default_factory=dict)
+    hints: dict = field(default_factory=dict)        # podpowiedzi do pozycji słowników
     min_score: float = 4.0
     title: list[str] = field(default_factory=list)   # słowa tytułu szukane na początku 1. strony
     title_weight: float = 5.0
 
-    # ------------------------------------------------------------- schemat dla LLM
-    def json_schema(self) -> dict:
-        return self._schema(self.output)
+    # ------------------------------------------------------------- formularz
+    def sections(self) -> list[Section]:
+        out, root = [], []
+        for name, node in self.output.items():
+            if isinstance(node, list):
+                out.append(Section(name, True, _flatten(node[0])))
+            elif is_leaf(node):
+                if "derive" not in node:
+                    root.append(Field(name, node))
+            else:
+                out.append(Section(name, False, _flatten(node)))
+        if root:
+            out.insert(0, Section("_", False, root))
+        return out
 
-    def _schema(self, node):
-        if isinstance(node, list):
-            return {"type": "array", "items": self._schema(node[0]), "minItems": 1, "maxItems": 4}
-        if is_leaf(node):
-            return self._leaf_schema(node)
-        props = {k: self._schema(v) for k, v in node.items() if not (is_leaf(v) and "derive" in v)}
-        return {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
-
-    def _leaf_schema(self, spec: dict) -> dict:
-        if "enum_from" in spec:
-            return {"enum": [int(k) for k in self.dictionaries[spec["enum_from"]]] + [None]}
-        if "enum" in spec:
-            return {"enum": list(spec["enum"]) + [None]}
-        t = spec.get("type", "string")
-        return {"type": [t, "null"]}
-
-    # ------------------------------------------------------------- opis pól dla promptu
-    def field_guide(self) -> str:
-        lines: list[str] = []
-        self._guide(self.output, "", lines)
+    def template(self) -> str:
+        lines = []
+        for s in self.sections():
+            lines.append(f"## {s.name} 1   (xN)" if s.is_list else f"## {s.name}")
+            lines += [f"{f.key}:" for f in s.fields]
         return "\n".join(lines)
 
-    def _guide(self, node, path: str, lines: list[str]):
-        if isinstance(node, list):
-            self._guide(node[0], path + "[]", lines)
-            return
-        if is_leaf(node):
-            if "derive" in node:
-                return
-            extra = ""
-            if "enum_from" in node:
-                d = self.dictionaries[node["enum_from"]]
-                extra = " Słownik: " + "; ".join(f"{k} = {v}" for k, v in d.items()) + "."
-            lines.append(f"- {path}: {node.get('desc', '')}{extra}")
-            return
-        for k, v in node.items():
-            self._guide(v, f"{path}.{k}" if path else k, lines)
+    def first_header(self) -> str:
+        s = self.sections()[0]
+        return f"## {s.name} 1" if s.is_list else f"## {s.name}"
+
+    def field_guide(self) -> str:
+        lines = []
+        for s in self.sections():
+            lines.append(f"[{s.name}]")
+            for f in s.fields:
+                lines.append(f"- {f.key}: {self._describe(f)}")
+        return "\n".join(lines)
+
+    def _describe(self, f: Field) -> str:
+        spec, desc = f.spec, f.spec.get("desc", "")
+        if "enum_from" in spec:
+            name = spec["enum_from"]
+            hints = self.hints.get(name, {})
+            items = "; ".join(f"{k} = {v}" + (f" ({hints[k]})" if k in hints else "")
+                              for k, v in self.dictionaries[name].items())
+            desc += f" Wpisz sam numer. Słownik: {items}."
+        elif "enum" in spec:
+            desc += " Dozwolone wartości: " + ", ".join(str(v) for v in spec["enum"]) + "."
+        if f.multi_inner:
+            desc += " Kilka wartości oddziel znakiem ' | '."
+        return desc.strip()
+
+
+def _flatten(node: dict, prefix: str = "") -> list[Field]:
+    out: list[Field] = []
+    for key, value in node.items():
+        if is_leaf(value):
+            if "derive" not in value:
+                out.append(Field(prefix + key, value))
+        elif isinstance(value, list):
+            inner = [(k, v) for k, v in value[0].items() if is_leaf(v) and "derive" not in v]
+            if len(inner) != 1 or len(value[0]) != 1:
+                raise ValueError(f"Lista zagnieżdżona '{prefix + key}' może mieć elementy tylko z jednym polem.")
+            out.append(Field(prefix + key, inner[0][1], multi_inner=inner[0][0]))
+        else:
+            out.extend(_flatten(value, f"{prefix}{key}."))
+    return out
 
 
 def is_leaf(node) -> bool:
@@ -75,7 +116,7 @@ def load_classes(directory: Path) -> list[DocClass]:
     for path in sorted(directory.glob("*.yaml")):
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         cls = raw.get("classify", {})
-        classes.append(DocClass(
+        doc_class = DocClass(
             name=raw["name"],
             description=raw.get("description", "").strip(),
             pages=int(raw.get("pages", 3)),
@@ -86,7 +127,10 @@ def load_classes(directory: Path) -> list[DocClass]:
             title_weight=float(cls.get("title_weight", 5)),
             output=raw["output"],
             dictionaries={k: {int(i): s for i, s in d.items()} for k, d in (raw.get("dictionaries") or {}).items()},
-        ))
+            hints={k: {int(i): s for i, s in d.items()} for k, d in (raw.get("hints") or {}).items()},
+        )
+        doc_class.sections()  # walidacja konfiguracji przy starcie
+        classes.append(doc_class)
     if not classes:
         raise FileNotFoundError(f"Brak klas dokumentów w {directory}")
     return classes

@@ -22,15 +22,15 @@ output:
     data_operacji:
       type: string
       validator: date
-      desc: "Data wykonania operacji/przelewu, YYYY-MM-DD."
+      desc: "Data wykonania operacji/przelewu; przepisz tak, jak jest zapisana."
     kwota:
       type: number
       validator: amount
-      desc: "Kwota przelewu jako liczba, np. 10000.00."
+      desc: "Kwota przelewu; przepisz tak, jak jest zapisana (np. 10 000,00 PLN). Nie opłata ani prowizja banku."
     na_rachunek:
       type: string
       validator: nrb
-      desc: "Numer rachunku odbiorcy (26 cyfr, bez spacji i bez 'PL')."
+      desc: "Pełny numer rachunku odbiorcy (beneficjenta); przepisz wszystkie cyfry."
     numer_transakcji:
       type: string
       validator: text
@@ -44,4 +44,4 @@ output:
     z_rachunku:
       type: string
       validator: nrb
-      desc: "Numer rachunku nadawcy (26 cyfr, bez spacji i bez 'PL')."
+      desc: "Pełny numer rachunku nadawcy (zleceniodawcy); przepisz wszystkie cyfry."
