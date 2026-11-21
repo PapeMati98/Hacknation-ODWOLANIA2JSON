@@ -156,3 +156,137 @@ def test_value_without_checksum_follows_confidence():
     assert check(_scan(line, 0.90, line))[1] == "ostrzezenie"                      # zostaje, ale do sprawdzenia
     assert check(_scan(line, 0.99, "zupełnie inna linia"))[1] == "ostrzezenie"     # inny odczyt nie zawiera linii
     assert check(_scan(line, 0.99, "KRS: 0000128456"))[0] is None                  # sprzeczne odczyty
+
+
+def test_layout_puts_margin_label_before_its_block_and_marks_redactions():
+    from odwolania2json.pdfio import REDACTED, Line, layout_text
+    lines = [Line("Spółka z o.o.", 0.99, 0.268, (0.37, 0.261, 0.69, 0.276)),
+             Line("Warszawa", 0.99, 0.282, (0.47, 0.275, 0.55, 0.290)),
+             Line("Odwołujący:", 0.99, 0.290, (0.11, 0.282, 0.22, 0.299)),
+             Line("KRS:", 0.99, 0.297, (0.25, 0.289, 0.31, 0.305)),
+             Line("tel.", 0.99, 0.313, (0.25, 0.305, 0.29, 0.321)),
+             Line("fax.", 0.99, 0.314, (0.44, 0.307, 0.47, 0.320)),
+             Line("Zamawiający: Gmina Beta", 0.99, 0.418, (0.11, 0.411, 0.60, 0.426))]
+    text = layout_text(lines, [(0.25, 0.259, 0.37, 0.276), (0.30, 0.292, 0.40, 0.305)])
+    assert text.splitlines()[:5] == ["Odwołujący:", f"{REDACTED} Spółka z o.o.", "Warszawa", f"KRS: {REDACTED}", "tel. fax."]
+    assert text.split("\n\n")[1] == "Zamawiający: Gmina Beta"
+
+
+def test_fragment_next_to_redaction_is_not_a_value():
+    from odwolania2json.extract import only_beside_redaction
+    text = "KANCELARIA PRAWNA [ZAKRYTE]\nWarszawa, dnia 16 czerwca 2025 r.\nKancelaria Prawna [ZAKRYTE] – Radca Prawny\n" \
+           "Zamawiający:\nGmina Beta\n[ZAKRYTE] Warszawa"
+    assert only_beside_redaction("Kancelaria Prawna", text)
+    assert not only_beside_redaction("Warszawa", text)          # jest też czyste wystąpienie w nagłówku
+    assert not only_beside_redaction("Gmina Beta", text)
+    assert verify_text("Kancelaria Prawna", text, "text", "ok", "")[0] is None
+
+
+def test_fragment_after_redaction_is_not_a_value():
+    from odwolania2json.extract import only_beside_redaction
+    assert only_beside_redaction("Spółka z o.o.", "Odwołujący:\n[ZAKRYTE] Spółka z o.o.\n[ZAKRYTE] Warszawa")
+
+
+def test_visual_reader_confirms_only_a_whole_number_fragment():
+    from odwolania2json.vision import adjust, judge
+    assert judge("krs", "0000123456", "KRS: 0000123456, NIP: 521-300-12-34") == "zgodne"
+    assert judge("nip", "5213001234", "KRS: 0000123456, NIP: 521-300-12-34") == "zgodne"
+    assert judge("krs", "0000123456", "KRS: 00001234567") == "inne"          # podciąg dłuższego numeru nie potwierdza
+    assert judge("krs", "0000123456", "KRS: 0000128456") == "inne"
+    assert judge("krs", "0000123456", "Sąd Rejonowy w Warszawie") == "niezwiazane"
+    assert judge("krs", "0000123456", "0000123456 5213001234") == "niezwiazane"   # dwa numery rozdzielone samą spacją
+    assert judge("nrb", "61109010140000071219812874", "61 1090 1014 0000 0712 1981 2874") == "zgodne"
+    assert judge("date", "2025-06-16", "Warszawa, dnia 16 czerwca 2025 r.") == "zgodne"
+    assert judge("date", "2025-06-16", "Warszawa, dnia 18 czerwca 2025 r.") == "inne"
+    assert judge("text", "KIO 1234/25", "Sygn. akt: KIO 1234/25") == "zgodne"
+    assert judge("text", "KIO 1234/25", "Sygn. akt: KIO 1284/25") == "inne"
+    assert judge("text", "KIO 1234/25", "Sygn. akt KIO 1234/25, Warszawa") == "zgodne"
+    assert judge("text", "KIO 1234", "Sygn. akt: KIO 1234/25") == "inne"     # obcięta wartość nie jest zgodnością
+    assert judge("text", "ZP.271", "nr referencyjny sprawy ZP.271.5.2026") != "zgodne"
+    assert judge("text", "KIO 1234/25", "Prezes Krajowej Izby Odwoławczej") == "niezwiazane"
+    assert judge("text", "ZP.271.5.2026", "(postępowanie nr ZP.271.5.2026)") == "zgodne"
+    assert adjust("srednia", "zgodne") == "wysoka" and adjust("niska", "zgodne") == "srednia"
+    assert adjust("srednia", "inne") is None and adjust("srednia", "niezwiazane") == "srednia"
+
+
+def test_dark_share_detects_a_black_box():
+    import numpy as np
+    from odwolania2json.vision import DARK_SHARE, dark_share
+    page = np.full((40, 400), 255, dtype=np.uint8)
+    page[14:26:3, 10:390:7] = 0                      # rzadki "tekst"
+    assert dark_share(page) < DARK_SHARE
+    page[8:32, 100:300] = 0                          # czarny prostokąt
+    assert dark_share(page) > DARK_SHARE
+
+
+def test_visual_reader_confirms_or_vetoes_but_never_writes_a_value():
+    from odwolania2json import extract
+
+    class Fake:
+        def __init__(self, verdict):
+            self.verdict, self.asked = verdict, 0
+
+        def check(self, doc, line, kind, value):
+            self.asked += 1
+            return self.verdict, "odczyt testowy"
+
+    line = "KRS: 0000123456"
+    check = lambda doc: extract.cross_check_ocr(doc, "krs", "0000123456", doc.text(None), "0000123456", "ok", "")
+    bad = "9998031631"
+    check_bad = lambda doc: extract.cross_check_ocr(doc, "nip", bad, doc.text(None), None, "nieczytelne", "nip: zła suma")
+    try:
+        extract.VISUAL_READER = reader = Fake("zgodne")
+        value, status, _, conf = check(_scan(line, 0.90, line))                 # średnia -> wysoka
+        assert (value, status, conf["poziom"]) == ("0000123456", "ok", "wysoka")
+        value, status, _, conf = check(_scan(line, 0.99, "KRS: 0000128456"))    # niska -> średnia: zostaje z ostrzeżeniem
+        assert (value, status, conf["poziom"]) == ("0000123456", "ostrzezenie", "srednia")
+        check(_scan(line, 0.99, line))                                          # wysoka: czytelnik nie jest pytany
+        assert reader.asked == 2
+        value, status, _, conf = check_bad(_scan(f"NIP: {bad}", 0.90, f"NIP: {bad}"))
+        assert value is None and reader.asked == 2                              # zła suma + null: zgodność niczego nie uchyla
+        extract.VISUAL_READER = Fake("inne")
+        assert check(_scan(line, 0.90, line))[0] is None                        # weto
+        value, status, note, _ = check_bad(_scan(f"NIP: {bad}", 0.99, f"NIP: {bad}"))
+        assert (value, status) == (bad, "ostrzezenie") and "odczyt testowy" in note   # reguła właściciela bez zmian
+        extract.VISUAL_READER = Fake("zakryte")
+        assert check(_scan(line, 0.90, line))[0] is None
+        extract.VISUAL_READER = Fake("niezwiazane")
+        assert check(_scan(line, 0.90, line))[1] == "ostrzezenie"               # bez zmian
+    finally:
+        extract.VISUAL_READER = None
+
+
+def test_visual_text_agreement_wins_over_similar_neighbour():
+    from odwolania2json.vision import judge
+    assert judge("text", "KIO 100/25", "KIO 100/25 i KIO 200/25") == "zgodne"
+
+
+def test_header_date_must_stand_in_its_own_line():
+    import yaml
+    from pathlib import Path
+    from odwolania2json.extract import line_context_ok
+    spec = yaml.safe_load((Path(__file__).resolve().parent.parent / "configs/classes/odwolanie.yaml").read_text(encoding="utf-8"))
+    patterns = spec["output"]["OdwolanieKIO"]["data"]["line_pattern"]
+    text = ("Warszawa, dnia 16 czerwca 2025 r.\nOdwołujący:\nAlfa sp. z o.o.\n"
+            "Zamawiający w dniu 10 czerwca 2025 roku poinformował o odrzuceniu oferty.\n"
+            "Na podstawie ustawy z dnia 11 września\n2019 r. wnoszę odwołanie.")
+    assert line_context_ok(patterns, "date", "2025-06-16", text)
+    assert not line_context_ok(patterns, "date", "2025-06-10", text)       # data ze zdania w treści
+    assert not line_context_ok(patterns, "date", "2019-09-11", text)       # data rozbita między linie
+    assert line_context_ok(patterns, "date", "2025-06-16", "Zielona Góra, 16.06.2025")
+    assert line_context_ok(patterns, "date", "2025-06-16", "16 czerwca 2025 r.")
+
+
+def test_named_action_decides_dictionary_entry():
+    import yaml
+    from pathlib import Path
+    from odwolania2json.extract import decide_from_text
+    spec = yaml.safe_load((Path(__file__).resolve().parent.parent / "configs/classes/odwolanie.yaml").read_text(encoding="utf-8"))
+    rule = spec["output"]["OdwolanieKIO"]["czynnosc_powod_id"]["decide"]
+    pick = lambda text: (decide_from_text(rule, text) or (None,))[0]
+    assert pick("Zamawiający w dniu 3 lipca 2026 roku opublikował Specyfikację\nWarunków Zamówienia. Zarzut nr 1: Opis Przedmiotu Zamówienia jest niepełny.") == 4
+    assert pick("Zamawiający w dniu 3 lipca 2026 roku udostępnił Opis Przedmiotu Zamówienia.") == 11
+    assert pick("Zamawiający w dniu 3 lipca 2026 roku nie odrzucił oferty złożonej przez wykonawcę Beta.") == 7
+    assert pick("Zamawiający w dniu 3 lipca 2026 roku poinformował o odrzuceniu oferty złożonej przez Odwołującego.") == 1
+    assert pick("Zamawiający w dniu 3 lipca 2026 roku opublikował dokumenty, w tym Opis Przedmiotu Zamówienia do SWZ.") is None   # dwie pozycje
+    assert pick("Odwołujący wnosi o uwzględnienie odwołania.") is None

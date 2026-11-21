@@ -39,6 +39,24 @@ class LlamaCppBackend:
         self._stop = {self.llm.token_eos()} | set(self._tok("<|im_end|>")) | set(self._tok("<|endoftext|>"))
         self.last_stats: dict = {}
 
+    # ------------------------------------------------------------- odczyt obrazu (czytelnik wizualny)
+    def enable_vision(self, mmproj_path: str) -> None:
+        """Podłącza projektor obrazu (plik mmproj z tego samego repozytorium co model)."""
+        from llama_cpp.llama_chat_format import MTMDChatHandler
+        self._vision = MTMDChatHandler(clip_model_path=mmproj_path, verbose=False, use_gpu=False)
+
+    def read_image(self, image, prompt: str, max_tokens: int = 48) -> str:
+        """Przepisuje tekst z wycinka (obraz PIL). Zmienia kontekst modelu - `fill` i tak odtwarza swój stan."""
+        import base64
+        import io
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+        out = self._vision(llama=self.llm, temperature=0.0, max_tokens=max_tokens, messages=[
+            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": uri}}, {"type": "text", "text": prompt}]}])
+        text = out["choices"][0]["message"]["content"] or ""
+        return re.sub(r"<think>.*?(</think>|\Z)", "", text, flags=re.DOTALL).strip()
+
     # ------------------------------------------------------------- niskopoziomowe operacje na kontekście
     def _tok(self, text: str, bos: bool = False) -> list[int]:
         return self.llm.tokenize(text.encode("utf-8"), add_bos=bos, special=True)

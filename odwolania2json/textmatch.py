@@ -168,11 +168,33 @@ def second_read(value: str, primary: str, alt: str) -> str | None:
     return "brak"
 
 
+DATE_PATTERNS = (r"\d{4}-\d{1,2}-\d{1,2}", r"\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{4}",
+                 r"\d{1,2}\s+[a-ząćęłńóśźż]+\s+\d{4}")
+
+
+def occurrences(value: str, text: str, normalize=None) -> list[tuple[str, str]]:
+    """Wystąpienia wartości w tekście jako pary (linia, dosłowny fragment linii).
+
+    Dla dat (`normalize` = funkcja normalizująca datę) trafieniem jest każdy zapis tej samej daty.
+    """
+    out = []
+    for line in text.splitlines():
+        low = line.lower()
+        if normalize is not None:
+            for pattern in DATE_PATTERNS:
+                out += [(line, line[m.start(): m.end()]) for m in re.finditer(pattern, low)
+                        if normalize(m.group(0)).value == value]
+        else:
+            start = low.find(value.lower()) if value else -1
+            if start >= 0:
+                out.append((line, line[start: start + len(value)]))
+    return out
+
+
 def dates_in_text(text: str, normalize) -> set[str]:
     """Wszystkie daty występujące w tekście, znormalizowane funkcją `normalize` (RRRR-MM-DD)."""
     out = set()
-    for pattern in (r"\d{4}-\d{1,2}-\d{1,2}", r"\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{4}",
-                    r"\d{1,2}\s+[a-ząćęłńóśźż]+\s+\d{4}"):
+    for pattern in DATE_PATTERNS:
         for m in re.finditer(pattern, text.lower()):
             value = normalize(m.group(0)).value
             if value:

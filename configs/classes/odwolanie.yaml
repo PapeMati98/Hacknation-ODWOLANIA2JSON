@@ -49,15 +49,39 @@ output:
     data:
       type: string
       validator: date
+      # Data nagłówka stoi w osobnej linii: sama albo po miejscowości („Warszawa, dnia 16 czerwca 2025 r.”).
+      # Data z treści pisma („Zamawiający w dniu … poinformował”) nie jest datą sporządzenia odwołania.
+      line_pattern:
+        - '^\s*(?i:dnia|dn\.|data:?)?\s*{value}\s*(?i:r\.?|roku)?[\s.]*$'
+        - '(?:^|\s)[A-ZĄĆĘŁŃÓŚŹŻ][\w.\-]*(?:[ \-][A-ZĄĆĘŁŃÓŚŹŻ][\w.\-]*){0,2}(?:,\s*|\s+(?=(?i:dnia|dn\.)))(?i:dnia|dn\.)?\s*{value}\s*(?i:r\.?|roku)?[\s.]*$'
       desc: "Data sporządzenia odwołania z nagłówka pierwszej strony (linia typu '<miejscowość>, dnia <dzień> <miesiąc> <rok> r.'). Przepisz datę tak, jak jest zapisana. Brak daty w nagłówku = '-'."
     czynnosc_dzien:
       type: string
       validator: date
-      desc: "Dzień, w którym Zamawiający dokonał zaskarżonej czynności (albo jej zaniechał) - zwykle w zdaniu 'Zamawiający w dniu ... <co zrobił lub czego nie zrobił>' przed zarzutami lub w pierwszym zarzucie. Przepisz datę tak, jak jest zapisana. To nie jest data ustawy ani data odwołania."
+      desc: "Dzień, w którym Zamawiający dokonał zaskarżonej czynności (albo jej zaniechał). Szukaj w zdaniu 'Zamawiający w dniu ... <co zrobił lub czego nie zrobił>' albo 'Zamawiający <zamieścił / opublikował / przekazał / poinformował> ... w dniu ...' - przed zarzutami, w pierwszym zarzucie albo w uzasadnieniu, że odwołanie wniesiono w terminie. Przepisz datę tak, jak jest zapisana. To nie jest data ustawy, data odwołania ani dzień, w którym upływa termin na odwołanie."
     czynnosc_powod_id:
       type: integer
       enum_from: powody
       desc: "Rodzaj zaskarżonej czynności lub zaniechania Zamawiającego, której dotyczy pierwszy zarzut (zdanie 'Zamawiający w dniu ...' i treść pierwszego zarzutu)."
+      # Gdy odwołanie nazywa czynność wprost w jednym zdaniu, rozstrzyga to zdanie, a nie temat zarzutów
+      # (opublikowanie SWZ to pozycja 4 także wtedy, gdy zarzuty mówią o opisie przedmiotu zamówienia).
+      # Zdanie pasujące do kilku pozycji albo do żadnej zostawia decyzję modelowi.
+      decide:
+        scope:
+          - 'Zamawiający w dniu[^.]*\.'
+          - 'wobec (?:czynności|treści)[^.;]*'
+        patterns:
+          1: ['(?<!nie )odrzucił ofert', 'o odrzuceniu ofert']
+          2: ['ogłosił wybór ofert', 'dokonał wyboru ofert']
+          3: ['(?<!nie )wykluczył', 'o wykluczeniu']
+          4: ['(?:opublikował|udostępnił|zamieścił)[^.]*(?:Specyfikacj\w+ Warunków Zamówienia|SWZ)', 'wobec treści (?:dokumentów zamówienia|SWZ|Specyfikacji)']
+          5: ['zmodyfikował', 'zmienił treść', 'modyfikacj\w+ treści']
+          6: ['odpowiedzi (?:i wyjaśnie\w+|na pytania)', 'wyjaśnie\w+ (?:do )?treści']
+          7: ['nie odrzucił', 'zaniecha\w+ odrzucenia']
+          8: ['nie wykluczył', 'zaniecha\w+ wykluczenia']
+          9: ['(?<!nie )unieważni+ł postępowanie', 'o unieważnieniu postępowania']
+          10: ['nie unieważnił', 'zaniecha\w+ unieważnienia']
+          11: ['Opis\w* Przedmiotu Zamówienia']
     czynnosc_opis:
       derive: {dictionary: powody, key: OdwolanieKIO.czynnosc_powod_id}
     miejscowosc:

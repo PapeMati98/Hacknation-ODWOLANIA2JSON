@@ -37,6 +37,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ocr-checksum", choices=("confidence", "strict"), default=extract.CHECKSUM_POLICY,
                     help="numer ze skanu ze złą sumą kontrolną: confidence = zostaje z ostrzeżeniem przy wysokiej "
                          "pewności odczytu, inaczej null (domyślnie); strict = zawsze null")
+    ap.add_argument("--visual-reader", choices=("off", "on"), default=os.environ.get("O2J_VISUAL_READER", "off"),
+                    help="czytelnik wizualny: drugi odczyt wycinków linii skanu modelem z projektorem obrazu "
+                         "(wymaga pliku --mmproj); potwierdza albo wetuje wartości o nie-wysokiej pewności")
+    ap.add_argument("--mmproj", default=os.environ.get("O2J_MMPROJ", str(APP_ROOT / "models" / "mmproj-F16.gguf")))
+    ap.add_argument("--resume", action="store_true",
+                    help="pomiń dokumenty, które mają już wynik w katalogu output (wznowienie przerwanego przebiegu)")
     args = ap.parse_args(argv)
     sys.stdout.reconfigure(encoding="utf-8")
     extract.CHECKSUM_POLICY = args.ocr_checksum
@@ -50,9 +56,13 @@ def main(argv: list[str] | None = None) -> int:
 
     # Etap 1: wczytanie (tekst lub OCR) i klasyfikacja wszystkich dokumentów.
     jobs = []
+    cases: dict[Path, dict] = {}         # sprawa -> wyniki dokumentów i pozycje do sprawdzenia
     max_pages = max(c.pages for c in classes)
     for pdf in pdfs:
         rel = pdf.relative_to(args.input).with_suffix(".json")
+        if args.resume and restore(args, rel, cases):
+            print(f"  {rel}: wynik już jest (--resume)", flush=True)
+            continue
         t0 = time.perf_counter()
         doc = pdfio.load(str(pdf), max_pages=max_pages)
         cls_name, scores = classify(doc, classes)
@@ -69,8 +79,16 @@ def main(argv: list[str] | None = None) -> int:
     # Etap 2: ekstrakcja pogrupowana klasami - stała część promptu zostaje w cache modelu.
     extractor = Extractor(make_backend(args.model, args.threads))
     print(f"Model: {extractor.backend.name}", flush=True)
-    cases: dict[Path, dict] = {}         # sprawa -> wyniki dokumentów i pozycje do sprawdzenia
-    for cls_name, rel, doc, record in sorted(jobs, key=lambda j: (j[0], str(j[1]))):
+    if args.visual_reader == "on":
+        if not hasattr(extractor.backend, "enable_vision") or not Path(args.mmproj).is_file():
+            print(f"Czytelnik wizualny wyłączony: brak pliku {args.mmproj} albo model nie jest lokalny", flush=True)
+        else:
+            from .vision import VisualReader
+            extractor.backend.enable_vision(args.mmproj)
+            extract.VISUAL_READER = VisualReader(extractor.backend)
+            print(f"Czytelnik wizualny: {Path(args.mmproj).name}", flush=True)
+    t_extract = time.perf_counter()
+    for done, (cls_name, rel, doc, record) in enumerate(sorted(jobs, key=lambda j: (j[0], str(j[1]))), 1):
         t0 = time.perf_counter()
         data, trace, answer = extractor.run(doc, by_name[cls_name])
         out_path = args.output / rel
@@ -80,7 +98,9 @@ def main(argv: list[str] | None = None) -> int:
                       model=getattr(extractor.backend, "last_stats", None))
         write_trace(args.trace, rel, record)
         flagged = sum(1 for t in trace if t["status"] in ("nieczytelne", "niezweryfikowane"))
-        print(f"  {rel}: {cls_name} | {time.perf_counter() - t0:.1f} s | pola odrzucone: {flagged}", flush=True)
+        left = (time.perf_counter() - t_extract) / done * (len(jobs) - done)
+        print(f"  [{done}/{len(jobs)}] {rel}: {cls_name} | {time.perf_counter() - t0:.1f} s | pola odrzucone: {flagged}"
+              f" | pozostało ok. {left / 60:.0f} min", flush=True)
         case = cases.setdefault(rel.parent, {"results": [], "review": []})
         case["results"].append((rel.name, cls_name, data))
         case["review"] += review_entries(rel.name, trace)
@@ -103,6 +123,24 @@ def main(argv: list[str] | None = None) -> int:
 def default_threads() -> int:
     """llama.cpp na CPU jest ograniczone przepustowością pamięci: więcej niż ~6 wątków nie przyspiesza."""
     return max(1, min(6, (os.cpu_count() or 4) // 2))
+
+
+def restore(args, rel: Path, cases: dict) -> bool:
+    """Wznowienie: wczytuje gotowy wynik dokumentu i jego ślad, żeby kontrola krzyżowa sprawy była pełna."""
+    out_path, trace_path = args.output / rel, args.trace / rel.with_suffix(".trace.json")
+    if not out_path.is_file() or not trace_path.is_file():
+        return False
+    try:
+        data = json.loads(out_path.read_text(encoding="utf-8"))
+        record = json.loads(trace_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not record.get("klasa") or "pola" not in record:
+        return False
+    case = cases.setdefault(rel.parent, {"results": [], "review": []})
+    case["results"].append((rel.name, record["klasa"], data))
+    case["review"] += review_entries(rel.name, record["pola"])
+    return True
 
 
 def write_trace(trace_dir: Path, rel: Path, record: dict) -> None:

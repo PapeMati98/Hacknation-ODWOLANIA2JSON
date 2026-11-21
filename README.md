@@ -60,7 +60,15 @@ Plik JSON ma tę samą nazwę co PDF i leży w podfolderze tej samej sprawy. Obo
 | `--cross-checks` | reguły kontroli krzyżowej między dokumentami sprawy | `configs/cross_checks.yaml` |
 | `--threads` / `O2J_THREADS` | liczba wątków CPU | połowa rdzeni, najwyżej 6 |
 | `--ocr-checksum` / `O2J_OCR_CHECKSUM` | numer ze skanu ze złą sumą kontrolną: `confidence` = zostaje z ostrzeżeniem przy wysokiej pewności odczytu, inaczej `null`; `strict` = zawsze `null` | `confidence` |
-| `O2J_API_BASE`, `O2J_API_MODEL`, `O2J_API_KEY` | model serwowany przez API zgodne z OpenAI (zamiast lokalnego) | — |
+| `--resume` | pomija dokumenty, które mają już wynik w `output` — wznowienie przerwanego przebiegu | wyłączone |
+| `--visual-reader` / `O2J_VISUAL_READER`, `--mmproj` | czytelnik wizualny: drugi odczyt wycinków linii skanu tym samym modelem z projektorem obrazu (`python tools/download_models.py --vision`, 672 MB) | `off` |
+| `O2J_API_BASE`, `O2J_API_MODEL`, `O2J_API_KEY` | opcja dodatkowa: model serwowany przez API zgodne z OpenAI zamiast lokalnego (patrz „Tryb lokalny a API”) | — |
+
+### Czas działania i przerwany przebieg
+Na 12-rdzeniowym CPU sprawa (odwołanie + pełnomocnictwo + przelew) zajmuje około 2 minut dla PDF-ów tekstowych; skan dodaje około minuty na OCR dokumentu. Program wypisuje postęp i szacowany pozostały czas. Wynik każdego dokumentu jest zapisywany od razu po jego przetworzeniu, więc przerwanie nie niszczy gotowych plików, a `--resume` kończy przebieg od miejsca przerwania.
+
+### Tryb lokalny a API
+Rozwiązaniem ocenianym jest **tryb lokalny** (model na CPU): tylko w nim działa prowadzone wypełnianie formularza i tylko dla niego podajemy wyniki F1. Zmienna `O2J_API_BASE` pozwala podmienić model na otwarty model serwowany osobno; odpowiedź przechodzi wtedy tę samą weryfikację i kontrolę krzyżową, ale ten tryb **nie był mierzony** i nie jest potrzebny do uruchomienia.
 
 ## Architektura
 
@@ -73,7 +81,8 @@ PDF ──► pdfio ──► classify ──► extract (LLM) ──► walidac
 
 | Moduł | Rola |
 |---|---|
-| `odwolania2json/pdfio.py` | Warstwa tekstowa PDF; gdy jej brak — OCR na CPU (RapidOCR, modele PP-OCR przez ONNX Runtime). Każda strona skanu jest czytana dwa razy w różnej rozdzielczości: linie o niskiej pewności są zastępowane lepszym odczytem albo dostają znacznik `[NIECZYTELNE]`, a drugi odczyt służy do kontroli krzyżowej wartości. |
+| `odwolania2json/pdfio.py` | Warstwa tekstowa PDF; gdy jej brak — OCR na CPU (RapidOCR, modele PP-OCR przez ONNX Runtime). Każda strona skanu jest czytana dwa razy w różnej rozdzielczości: linie o niskiej pewności są zastępowane lepszym odczytem albo dostają znacznik `[NIECZYTELNE]`, a drugi odczyt służy do kontroli krzyżowej wartości. Z ramek linii odtwarzany jest układ strony, a czarne prostokąty anonimizacji dostają znacznik `[ZAKRYTE]` (patrz „Układ strony skanu”). |
+| `odwolania2json/vision.py` | Opcjonalny czytelnik wizualny: drugi, niezależny odczyt wycinka linii; tylko potwierdza albo wetuje wartość z OCR. |
 | `odwolania2json/config.py` | Wczytuje klasy dokumentów z YAML; buduje z nich formularz i opis pól dla modelu. |
 | `odwolania2json/extract.py` | Klasyfikacja (słowa kluczowe i tytuł z YAML, próg odrzucenia) oraz ekstrakcja: model wypełnia zwięzły formularz `klucz: wartość`, kod zamienia go na JSON i weryfikuje każde pole. |
 | `odwolania2json/llm.py` | Model językowy: lokalnie przez llama.cpp (Qwen3.5-4B, Apache-2.0) albo przez API zgodne z OpenAI. |
@@ -87,6 +96,14 @@ Na CPU czas zależy głównie od liczby generowanych tokenów. Formularz `klucz:
 
 Model lokalny wypełnia formularz w sposób prowadzony: klucze podaje mu kod (szybkie przetwarzanie wsadowe), a model generuje wyłącznie wartości. Stan modelu po przeczytaniu instrukcji i opisu pól danej klasy jest zapamiętywany, więc dla kolejnych dokumentów tej klasy czytany jest już tylko tekst dokumentu. Lista podmiotów kończy się, gdy model przestaje podawać nowe — powtórzenie już wpisanego podmiotu jest odrzucane.
 
+### Układ strony skanu
+OCR zwraca linie w kolejności, która przy układzie dwukolumnowym (etykieta „Odwołujący:” na marginesie, dane obok) miesza strony postępowania. Dlatego tekst skanu jest składany z ramek linii:
+
+- linie o tym samym położeniu w pionie tworzą wiersz (od lewej do prawej), wiersze bez większego odstępu — blok;
+- etykieta stojąca na marginesie obok bloku trafia na jego początek;
+- **czarne prostokąty anonimizacji** są wykrywane w obrazie (spójny, wypełniony obszar ciemnych pikseli) i wstawiane do tekstu jako `[ZAKRYTE]`. Wartość zawierająca znacznik albo występująca wyłącznie tuż obok niego (ocalały fragment zakrytej całości, np. „Kancelaria Prawna [ZAKRYTE]”) daje `null`;
+- strona jest renderowana jak kartka A4 — skan zapisany w małej rozdzielczości nie jest sztucznie powiększany; linia nadal nieczytelna jest czytana ponownie z wycinka w kilku powiększeniach.
+
 ### Kontrola krzyżowa
 Sprawdzenie pojedynczego pola nie wystarcza: KRS, daty, kwoty i numery ogłoszeń nie mają sumy kontrolnej, a poprawny numer może trafić do niewłaściwego podmiotu. Dlatego wynik przechodzi dodatkowe kontrole:
 
@@ -94,10 +111,12 @@ Sprawdzenie pojedynczego pola nie wystarcza: KRS, daty, kwoty i numery ogłosze�
    **Wskaźnik pewności** każdej wartości ze skanu łączy pewność linii podawaną przez OCR z werdyktem innych odczytów: *wysoka* — linia pewna (≥ 0,95) i inny odczyt daje to samo; *średnia* — brak sprzeczności, ale linia mniej pewna albo inny odczyt jej nie zawiera; *niska* — inny odczyt daje inną wartość. Niska → `null`; średnia → wartość zostaje z ostrzeżeniem. Numer ze złą sumą kontrolną zostaje (z ostrzeżeniem) tylko przy pewności wysokiej. Wskaźnik jest zapisany w śladzie i na liście do sprawdzenia.
 2. **Wartość musi być w dokumencie.** Dotyczy każdego pola, także dat, kwot i numerów ogłoszeń: model nie może podać wartości, której w tekście nie ma (np. przepisanej z instrukcji).
 3. **Kontrola przypisania.** Ten sam NIP / KRS / REGON / rachunek nie może trafić do kilku pól. Numer zostaje przy tym podmiocie, przy którego nazwie leży w dokumencie; gdy nie da się tego ustalić — znika ze wszystkich pól.
-4. **Zależności między polami** (w YAML klasy): `requires` — pole ma sens tylko razem z innym (miejscowość z nagłówka tylko z datą); `not_in` — wartość nie może powtarzać się na innej liście (podpisujący pełnomocnictwo nie może być pełnomocnikiem).
+4. **Zależności między polami** (w YAML klasy): `requires` — pole ma sens tylko razem z innym (miejscowość z nagłówka tylko z datą); `not_in` — wartość nie może powtarzać się na innej liście (podpisujący pełnomocnictwo nie może być pełnomocnikiem); `line_pattern` — linia, w której stoi wartość, musi mieć określoną postać (data odwołania stoi w osobnej linii nagłówka, sama albo po miejscowości; data ze zdania w treści nią nie jest). Na 71 przykładowych odwołaniach (tekst i skany) reguła przepuszcza wszystkie 55 dat nagłówka i żadnej innej daty.
 5. **Zgodność między dokumentami sprawy** (`configs/cross_checks.yaml`): Odwołujący z odwołania ↔ mocodawca z pełnomocnictwa (KRS, NIP, nazwa), pełnomocnik z odwołania ↔ pełnomocnicy z pełnomocnictwa, kolejność dat. Rozbieżność jest zgłaszana, ale nie zmienia JSON-ów — nie wiadomo, który dokument ma rację. Na 60 przykładowych sprawach organizatora reguły nie dają ani jednego fałszywego alarmu.
 
 Reguły między dokumentami dopisuje się w YAML, bez zmian w kodzie (rodzaje: `same`, `not_after`, `one_of`).
+
+**Czytelnik wizualny (opcja `--visual-reader on`).** Ten sam model z projektorem obrazu czyta wycinek pojedynczej linii skanu jako drugi, niezależny czytelnik. Nigdy nie jest autorem wartości: odczyt zgodny podnosi wskaźnik pewności o jeden stopień, odczyt z inną wartością zeruje pole, odczyt pusty lub niezwiązany z linią niczego nie zmienia. Pytany jest tylko o pola, których pewność nie jest wysoka (najwyżej 12 wycinków na dokument), nigdy o linię z czarnym prostokątem. Numer potwierdza wyłącznie cały fragment cyfr — nie część dłuższego numeru. Przy numerze ze złą sumą kontrolną czytelnik niczego nie zmienia (może tylko dopisać uwagę do listy do sprawdzenia).
 
 ### Weryfikacja wartości
 Dla każdego pola w `trace/<sprawa>/<plik>.trace.json` zapisywane są: wartość surowa z modelu, wartość końcowa, źródło (`warstwa_tekstowa` / `ocr`) oraz status:
@@ -163,7 +182,7 @@ output:                        # struktura wynikowego JSON
 ```
 
 Dostępne walidatory: `text`, `person` (imię i nazwisko bez tytułów), `date`, `amount`, `email`, `nip`, `regon`, `pesel`, `krs`, `nrb`, `bzp`, `ted`.
-Opcje pola: `verify_in_text`, `enum`, `enum_from`, `derive`, `only_if_multiple` (pole wypełniane tylko, gdy lista ma kilka elementów), `requires`, `not_in`, `output_type: integer`.
+Opcje pola: `verify_in_text`, `enum`, `enum_from`, `derive`, `only_if_multiple` (pole wypełniane tylko, gdy lista ma kilka elementów), `requires`, `not_in`, `line_pattern` (wyrażenie regularne lub lista wyrażeń z miejscem `{value}` — postać linii, w której musi stać wartość), `output_type: integer`.
 Podpowiedzi do pozycji słownika (jak dana pozycja bywa opisana w dokumentach) wpisuje się w sekcji `hints`.
 
 ## Ocena jakości
@@ -186,7 +205,7 @@ python tools/score.py --manifest eval/manifest.json --pred eval/out --split dev
 
 | Komponent | Licencja | Zastosowanie |
 |---|---|---|
-| Qwen3.5-4B (GGUF, kwantyzacja unsloth) | Apache-2.0 | model językowy |
+| Qwen3.5-4B (GGUF, kwantyzacja unsloth) | Apache-2.0 | model językowy; opcjonalnie jego projektor obrazu `mmproj-F16.gguf` (czytelnik wizualny) |
 | llama.cpp / llama-cpp-python | MIT | uruchamianie modelu na CPU |
 | RapidOCR + modele PP-OCR | Apache-2.0 | OCR |
 | ONNX Runtime | MIT | silnik OCR |

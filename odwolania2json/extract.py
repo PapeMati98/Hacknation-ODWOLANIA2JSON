@@ -16,15 +16,17 @@ from dataclasses import dataclass, field
 
 from .config import DocClass, Section, is_leaf
 from .crosscheck import apply_field_rules, resolve_duplicates
-from .pdfio import ALT_DPIS, UNREADABLE, Document
-from .textmatch import (ID_LENGTHS, _compact, appears_in, dates_in_text, digits_in_text, fold, person_in, second_read,
+from .pdfio import ALT_DPIS, REDACTED, UNREADABLE, Document
+from .textmatch import (ID_LENGTHS, _compact, appears_in, dates_in_text, digits_in_text, fold, occurrences, person_in,
+                        second_read,
                         snap_digits, snap_span, snap_text, words_in)
 from .validators import VALIDATORS, digits_from_ocr, norm_date
 
 SYSTEM_PROMPT = (
     "Jesteś precyzyjnym ekstraktorem danych z polskich dokumentów urzędowych (zamówienia publiczne, KIO). "
     "Wypełniasz formularz wyłącznie na podstawie podanego tekstu. Wartości przepisujesz dosłownie. "
-    "Jeśli informacji nie ma, jest zakryta (anonimizacja) albo oznaczona jako [NIECZYTELNE], wpisujesz '-'. "
+    "Jeśli informacji nie ma, jest zakryta (w tekście znacznik [ZAKRYTE] - anonimizacja czarnym prostokątem) "
+    "albo oznaczona jako [NIECZYTELNE], wpisujesz '-'. Nie składasz wartości z fragmentów stojących obok [ZAKRYTE]. "
     "Nigdy nie zgadujesz i nie wymyślasz numerów, nazw ani dat."
 )
 RULES = (
@@ -195,6 +197,8 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
 
     if value is None or (isinstance(value, str) and (value.strip().casefold() in EMPTY or UNREADABLE in value)):
         return done(None, "brak")
+    if REDACTED in str(value):
+        return done(None, "brak", "pole zakryte (anonimizacja)")
     value = str(value).strip().strip('"„”')
     text = doc.text(max_pages=None)
 
@@ -202,6 +206,9 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
         allowed = spec.get("enum")
         m = re.search(r"-?\d+", value)
         if spec.get("type") == "integer" or "enum_from" in spec:
+            decided = decide_from_text(spec["decide"], text) if spec.get("decide") else None
+            if decided is not None and (not m or int(m.group(0)) != decided[0]):
+                return done(decided[0], "dopasowano", f"{value!r} -> pozycja słownika wskazana wprost w zdaniu: {decided[1]!r}")
             if not m:
                 return done(None, "nieczytelne", f"oczekiwano liczby: {value!r}")
             num = int(m.group(0))
@@ -231,6 +238,9 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
         # Data, kwota, numer ogłoszenia, e-mail: model nie może podać wartości, której w dokumencie nie ma.
         result, status, note = None, "niezweryfikowane", "wartości nie ma w tekście dokumentu"
 
+    if result is not None and spec.get("line_pattern") and not line_context_ok(spec["line_pattern"], kind, result, text):
+        result, status, note = None, "niezweryfikowane", "wartość stoi w dokumencie w innym miejscu niż wymagane dla pola"
+
     confidence = None
     if from_ocr:
         result, status, note, confidence = cross_check_ocr(doc, kind, value, text, result, status, note)
@@ -246,6 +256,32 @@ HIGH_LINE_CONF = 0.95      # pewność linii OCR, od której odczyt uznajemy za 
 #   confidence (domyślnie) - zależy od wskaźnika pewności odczytu: wysoka -> zostaje z ostrzeżeniem, inaczej null,
 #   strict                 - zawsze null i pozycja do sprawdzenia.
 CHECKSUM_POLICY = os.environ.get("O2J_OCR_CHECKSUM", "confidence")
+VISUAL_READER = None       # vision.VisualReader - drugi czytelnik wycinków linii; ustawia cli (--visual-reader on)
+
+
+def best_line(doc: Document, probe: str):
+    """Linia odczytu głównego zawierająca wartość (ta o najwyższej pewności)."""
+    key = _compact(probe)
+    lines = [l for p in doc.pages for l in p.lines if key and key in _compact(l.text)]
+    return max(lines, key=lambda l: l.conf) if lines else None
+
+
+def visual_check(doc: Document, kind: str, probe: str, conf: dict) -> tuple[dict, str | None]:
+    """Pyta czytelnika wizualnego o wartość o nie-wysokiej pewności. Zwraca (wskaźnik, powód wyzerowania | None).
+
+    Odczyt zgodny podnosi pewność o jeden stopień, inna wartość w odczycie albo czarny prostokąt w wycinku
+    zerują pole, odczyt pusty lub niezwiązany z linią niczego nie zmienia.
+    """
+    from .vision import adjust
+    verdict, detail = VISUAL_READER.check(doc, best_line(doc, probe), kind, probe)
+    conf = dict(conf, czytelnik_wizualny=verdict)
+    if verdict == "zakryte":
+        return conf, f"linia z czarnym prostokątem ({detail})"
+    if verdict == "inne":
+        return conf, f"inna wartość w odczycie wizualnym ({detail})"
+    if verdict == "zgodne":
+        conf["poziom"] = adjust(conf["poziom"], verdict)
+    return conf, None
 
 
 def line_conf(doc: Document, probe: str) -> float | None:
@@ -278,7 +314,8 @@ def ocr_confidence(doc: Document, probe: str, text: str) -> dict:
 
 
 def _describe(c: dict) -> str:
-    return f"pewność odczytu {c['poziom']}: linia {c['pewnosc_linii']}, inny odczyt: {c['inny_odczyt']}"
+    visual = f", czytelnik wizualny: {c['czytelnik_wizualny']}" if c.get("czytelnik_wizualny") else ""
+    return f"pewność odczytu {c['poziom']}: linia {c['pewnosc_linii']}, inny odczyt: {c['inny_odczyt']}{visual}"
 
 
 def cross_check_ocr(doc: Document, kind: str, value: str, text: str, result, status: str, note: str):
@@ -304,12 +341,22 @@ def cross_check_ocr(doc: Document, kind: str, value: str, text: str, result, sta
         if CHECKSUM_POLICY != "strict" and len(digits) in ID_LENGTHS[kind]:
             conf = ocr_confidence(doc, digits, text)
             if conf["poziom"] == "wysoka":
-                return digits, "ostrzezenie", f"zła suma kontrolna; {_describe(conf)}", conf
+                extra = ""
+                if VISUAL_READER is not None:       # tylko uwaga: reguły dla złej sumy czytelnik nie zmienia
+                    verdict, detail = VISUAL_READER.check(doc, best_line(doc, digits), kind, digits)
+                    conf["czytelnik_wizualny"] = verdict
+                    extra = f"; {detail}" if verdict == "inne" else ""
+                return digits, "ostrzezenie", f"zła suma kontrolna; {_describe(conf)}{extra}", conf
             return None, "nieczytelne", f"zła suma kontrolna; {_describe(conf)}", conf
         return result, status, note, None
     if result is None or not needs_second_read(kind, value, status):
         return result, status, note, None
-    conf = ocr_confidence(doc, str(result) if kind in ID_LENGTHS else value, text)
+    probe = str(result) if kind in ID_LENGTHS else value
+    conf = ocr_confidence(doc, probe, text)
+    if VISUAL_READER is not None and conf["poziom"] in ("niska", "srednia"):
+        conf, veto = visual_check(doc, kind, probe, conf)
+        if veto:
+            return None, "nieczytelne", f"{veto}; {_describe(conf)}", conf
     if conf["poziom"] == "niska":
         return None, "nieczytelne", f"niezależne odczyty OCR dają różne wartości; {_describe(conf)}", conf
     if conf["poziom"] == "srednia":
@@ -352,6 +399,40 @@ def value_in_text(kind: str, raw: str, result, text: str) -> bool:
     return _compact(str(result)) in _compact(text)
 
 
+def decide_from_text(rule: dict, text: str):
+    """Reguła `decide` z YAML: pozycja słownika nazwana wprost w dokumencie.
+
+    `scope` - wyrażenia wskazujące zdanie, w którym dokument nazywa rzecz po imieniu (np. „Zamawiający w dniu …”),
+    `patterns` - dla pozycji słownika lista wyrażeń. Rozstrzygnięcie zapada tylko wtedy, gdy w pierwszym
+    znalezionym zdaniu pasuje dokładnie jedna pozycja; inaczej decyduje model. Zwraca (pozycja, zdanie) albo None.
+    """
+    flat = re.sub(r"\s+", " ", text)
+    for scope in rule.get("scope", []):
+        for sentence in (m.group(0) for m in re.finditer(scope, flat, flags=re.IGNORECASE)):
+            hits = [key for key, patterns in rule.get("patterns", {}).items()
+                    if any(re.search(p, sentence, flags=re.IGNORECASE) for p in patterns)]
+            if len(hits) == 1:
+                return int(hits[0]), sentence[:160]
+            if hits:
+                return None                      # zdanie pasuje do kilku pozycji - niech rozstrzyga model
+    return None
+
+
+def line_context_ok(patterns, kind: str, result, text: str) -> bool:
+    """Reguła `line_pattern` z YAML: linia, w której stoi wartość, musi pasować do jednego z wzorców.
+
+    Wzorzec to wyrażenie regularne z miejscem `{value}` na samą wartość. Służy do odróżnienia np. daty z
+    nagłówka pisma („Miejscowość, dnia …” w osobnej linii) od dat w treści. Gdy wartości nie da się wskazać
+    w żadnej linii (nietypowy zapis), reguła niczego nie odrzuca. Data rozbita między dwie linie to data
+    ze zdania w treści - taka wymaganego miejsca nie spełnia.
+    """
+    hits = occurrences(str(result), text, norm_date if kind == "date" else None)
+    if not hits:
+        return not (kind == "date" and str(result) in dates_in_text(text, norm_date))
+    patterns = [patterns] if isinstance(patterns, str) else patterns
+    return any(re.search(p.replace("{value}", re.escape(fragment)), line) for line, fragment in hits for p in patterns)
+
+
 def needs_second_read(kind: str, value: str, status: str) -> bool:
     if kind == "person":
         return False
@@ -364,6 +445,8 @@ def needs_second_read(kind: str, value: str, status: str) -> bool:
 
 def verify_text(value: str, text: str, kind: str, status: str, note: str):
     """Sprawdza wartość tekstową w dokumencie; w razie potrzeby zastępuje ją dosłownym fragmentem tekstu."""
+    if only_beside_redaction(value, text):
+        return None, "niezweryfikowane", "wartość jest fragmentem danych zakrytych czarnym prostokątem"
     if kind == "person":       # nazwisko w dokumencie bywa odmienione, a wynik ma być w mianowniku
         if appears_in(value, text) or person_in(value, text):
             return value, status, note
@@ -379,6 +462,24 @@ def verify_text(value: str, text: str, kind: str, status: str, note: str):
     if words_in(value, text):
         return value, status, "słowa wartości występują w dokumencie w kilku miejscach"
     return None, "niezweryfikowane", "wartości nie ma w tekście dokumentu"
+
+
+def only_beside_redaction(value: str, text: str) -> bool:
+    """Czy wartość występuje w dokumencie wyłącznie tuż obok znacznika [ZAKRYTE] w tej samej linii.
+
+    Taka wartość to ocalały fragment zakrytej całości (np. „Kancelaria Prawna [ZAKRYTE]”), a nie pełna dana.
+    """
+    if REDACTED not in text:
+        return False
+    pattern = r"\s+".join(re.escape(w) for w in value.split())
+    hits = list(re.finditer(pattern, text, flags=re.IGNORECASE)) if pattern else []
+    marker, gap = re.escape(REDACTED), r"[ \t,;–\-]{0,3}"
+
+    def beside(m) -> bool:
+        before, after = text[max(0, m.start() - len(REDACTED) - 3): m.start()], text[m.end(): m.end() + len(REDACTED) + 3]
+        return bool(re.search(marker + gap + r"\Z", before) or re.match(gap + marker, after))
+
+    return bool(hits) and all(beside(m) for m in hits)
 
 
 def apply_derived(cls: DocClass, spec, node, root):
