@@ -22,6 +22,14 @@ classify:
   negative:
     "wnoszę odwołanie": 4
     "potwierdzenie przelewu": 3
+    "orzeka:": 5
+    "w składzie:": 4
+    "po rozpoznaniu na": 5    # orzeczenie KIO: "po rozpoznaniu na posiedzeniu / rozprawie"
+    "postanawia:": 5
+  # Początek dokumentu przedstawia inne pismo: klasa wykluczona, wynik to pusty JSON.
+  exclude_title: ["sygn. akt kio", "sygn. akt: kio", "postanowienie", "wyrok", "odpowiedź na odwołanie",
+                  "zgłoszenie przystąpienia", "przystąpienie do postępowania odwoławczego", "zawiadomienie o",
+                  "wezwanie do", "faktura vat", "faktura nr"]
 # Konsorcjum: mocodawców jest tylu, ile punktów wyliczenia '1) ..., 2) ...' przed zdaniem udzielającym
 # pełnomocnictwa - liczą się tylko punkty z własnym numerem KRS albo NIP (wyliczenie członków zarządu
 # albo pełnomocników nie jest listą mocodawców). Reguła podaje liczbę minimalną: model jest prowadzony do

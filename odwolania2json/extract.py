@@ -58,10 +58,14 @@ def plain(s: str) -> str:
     return fold(s).translate(_PLAIN)
 
 
+EXCLUDE_TITLE_CHARS = 400     # tyle znaków (bez odstępów) początku 1. strony obejmuje nagłówek i tytuł pisma
+
+
 def classify(doc: Document, classes: list[DocClass]) -> tuple[str | None, dict[str, float]]:
     text = plain(doc.text(max_pages=2))
     flat = re.sub(r"\s", "", text)
-    head = re.sub(r"\s", "", plain(doc.pages[0].text if doc.pages else ""))[:250]
+    start = re.sub(r"\s", "", plain(doc.pages[0].text if doc.pages else ""))
+    head, opening = start[:250], start[:EXCLUDE_TITLE_CHARS]
 
     def has(k: str) -> bool:
         k = plain(k)
@@ -72,6 +76,8 @@ def classify(doc: Document, classes: list[DocClass]) -> tuple[str | None, dict[s
         s = sum(w for k, w in c.keywords.items() if has(k))
         s -= sum(w for k, w in c.negative.items() if has(k))
         s += sum(c.title_weight for k in c.title if re.sub(r"\s", "", plain(k)) in head)
+        if any(re.sub(r"\s", "", plain(k)) in opening for k in c.exclude_title):
+            s = min(s, 0.0)                     # dokument przedstawia się jako inne pismo
         scores[c.name] = s
     best = max(scores, key=scores.get)
     by_name = {c.name: c for c in classes}

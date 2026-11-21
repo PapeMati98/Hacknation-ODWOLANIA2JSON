@@ -540,6 +540,31 @@ def test_api_backend_fills_the_form_line_by_line_like_the_local_model():
     assert backend.last_stats["zapytania"] == 7
 
 
+def test_klasyfikator_odrzuca_pisma_podobne_do_klas():
+    """Orzeczenie KIO, odpowiedź na odwołanie, przystąpienie i faktura używają słownictwa klas, ale ich początek
+    przedstawia inne pismo - wynik to brak klasy (pusty JSON). Prawdziwe odwołanie zostaje odwołaniem."""
+    from odwolania2json.extract import classify
+    from odwolania2json.pdfio import Document, Page
+
+    classes = load_classes(Path(__file__).resolve().parent.parent / "configs" / "classes")
+
+    def cls(text: str):
+        return classify(Document("x.pdf", [Page(1, "text", text)]), classes)[0]
+
+    body = ("Odwołujący: Alfa sp. z o.o. Zamawiający: Gmina Beta. Odwołanie wniesione do Prezesa Krajowej Izby "
+            "Odwoławczej dotyczy zarzutów wobec czynności zamawiającego. ")
+    assert cls("Warszawa, 1.09.2026\nPrezes Krajowej Izby Odwoławczej\nODWOŁANIE\n" + body + "Wnoszę odwołanie.") == "odwolanie"
+    assert cls("Sygn. akt: KIO 2126/26\nPOSTANOWIENIE\nKrajowa Izba Odwoławcza - w składzie: Przewodniczący: X\n"
+               "po rozpoznaniu na posiedzeniu niejawnym odwołania wniesionego do Prezesa Krajowej Izby Odwoławczej\n"
+               + body + "postanawia: umorzyć postępowanie odwoławcze") is None
+    assert cls("Rzeszów, 7.03.2026\nZnak sprawy: IZ.272.10.2026\nODPOWIEDŹ NA ODWOŁANIE\n" + body
+               + "Zamawiający wnosi o oddalenie odwołania w całości.") is None
+    assert cls("Warszawa, 23.07.2026\nPrezes Krajowej Izby Odwoławczej\n" + body
+               + "ZGŁOSZENIE PRZYSTĄPIENIA do postępowania odwoławczego po stronie zamawiającego") is None
+    assert cls("FAKTURA VAT nr FV/72/2026\nSprzedawca: Kancelaria X\nNabywca: Y\nKwota do zapłaty: 9 840,00 zł, "
+               "przelew na rachunek 11 1111 1111, tytuł: sporządzenie odwołania, potwierdzenie przelewu w załączeniu") is None
+
+
 def test_api_backend_przeczekuje_krotka_przerwe_serwera(monkeypatch):
     """Restart serwera (502) nie gubi zapytania; zły klucz kończy od razu czytelnym komunikatem;
     po dłuższej niedostępności kolejne zapytania już nie czekają."""

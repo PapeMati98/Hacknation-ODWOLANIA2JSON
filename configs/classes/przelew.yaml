@@ -17,6 +17,16 @@ classify:
   negative:
     "wnoszę odwołanie": 4
     "udzielam pełnomocnictwa": 4
+    "orzeka:": 5
+    "w składzie:": 4
+    "po rozpoznaniu na": 5    # orzeczenie KIO: "po rozpoznaniu na posiedzeniu / rozprawie"
+    "postanawia:": 5
+    "sprzedawca": 3           # faktura, nie potwierdzenie przelewu
+    "nabywca": 3
+  # Początek dokumentu przedstawia inne pismo: klasa wykluczona, wynik to pusty JSON.
+  exclude_title: ["sygn. akt kio", "sygn. akt: kio", "postanowienie", "wyrok", "odpowiedź na odwołanie",
+                  "zgłoszenie przystąpienia", "przystąpienie do postępowania odwoławczego", "zawiadomienie o",
+                  "wezwanie do", "faktura vat", "faktura nr"]
 # Etykiety rubryk wydruków bankowych: etykieta nie może być wartością pola.
 x-etykiety: &etykiety
   - '(szczegóły|szczegoly) (płatności|platnosci|zlecenia|transakcji|operacji|przelewu):?'

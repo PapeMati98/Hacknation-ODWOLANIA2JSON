@@ -42,6 +42,9 @@ class DocClass:
     min_score: float = 4.0
     title: list[str] = field(default_factory=list)   # słowa tytułu szukane na początku 1. strony
     title_weight: float = 5.0
+    # Tytuły innych pism (np. "postanowienie", "odpowiedź na odwołanie"): znalezione na początku 1. strony
+    # wykluczają klasę, choćby słownictwo dokumentu do niej pasowało.
+    exclude_title: list[str] = field(default_factory=list)
 
     # ------------------------------------------------------------- formularz
     def sections(self) -> list[Section]:
@@ -126,6 +129,7 @@ def load_classes(directory: Path) -> list[DocClass]:
             min_score=float(cls.get("min_score", 4)),
             title=list(cls.get("title") or []),
             title_weight=float(cls.get("title_weight", 5)),
+            exclude_title=list(cls.get("exclude_title") or []),
             output=raw["output"],
             dictionaries={k: {int(i): s for i, s in d.items()} for k, d in (raw.get("dictionaries") or {}).items()},
             hints={k: {int(i): s for i, s in d.items()} for k, d in (raw.get("hints") or {}).items()},
