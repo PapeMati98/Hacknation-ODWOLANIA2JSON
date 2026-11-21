@@ -75,6 +75,9 @@ output:
         - imie_nazwisko:
             type: string
             not_in: "pelnomocnicy[].imie_nazwisko"
+            # Osoba podpisana "W imieniu spółki: Jan Kowalski - Członek Zarządu" jest podpisującym, nawet jeśli
+            # model dopisał ją też do pełnomocników.
+            keep_when: '(w imieniu\b|reprezentowan\w* przez|(prezes|cz[łl]onek|wiceprezes)\w* zarz[ąa]du|prokurent|komplementariusz|w[łl]a[śs]ciciel)'
             validator: person
             reject: *nie_osoba
             check: "wyłącznie imię i nazwisko osoby (nie firma, kancelaria, funkcja ani etykieta)"

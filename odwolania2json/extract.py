@@ -332,6 +332,11 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
         # Data, kwota, numer ogłoszenia, e-mail: model nie może podać wartości, której w dokumencie nie ma.
         result, status, note = None, "niezweryfikowane", "wartości nie ma w tekście dokumentu"
 
+    if isinstance(result, str) and spec.get("wraps"):
+        longer = extend_wrapped(result, text, spec.get("reject", []))
+        if longer != result:
+            result, note = longer, "wartość złamana w dokumencie na kolejną linię - dołączono ciąg dalszy"
+
     if result is not None and any(re.fullmatch(p, str(result).strip(), flags=re.IGNORECASE) for p in spec.get("reject", [])):
         # Reguła `reject` z YAML: wartość ma postać, której to pole mieć nie może (etykieta rubryki, dane innego rodzaju).
         result, status, note = None, "niezweryfikowane", "wartość ma postać niedozwoloną dla pola (etykieta rubryki albo dane innego rodzaju)"
@@ -496,6 +501,28 @@ def ocr_confirms(doc: Document, probe: str, text: str) -> str | None:
         if verdict in verdicts:
             return verdict
     return None
+
+
+def extend_wrapped(value: str, text: str, labels: list[str]) -> str:
+    """Wartość złamana w dokumencie na kolejną linię (długi tytuł przelewu), a przepisana tylko do końca pierwszej.
+
+    Ciąg dalszy jest dołączany, gdy wartość kończy linię, a linia urywa się przecinkiem lub łącznikiem albo
+    następna zaczyna się małą literą - i następna linia nie jest etykietą kolejnej rubryki."""
+    lines = [line.strip() for line in text.splitlines()]
+    value = value.strip()
+    for i, line in enumerate(lines[:-1]):
+        at = line.rfind(value)
+        if not value or at < 0 or line[at + len(value):].strip(" ,;-–/"):
+            continue
+        out = line[at:]
+        for nxt in lines[i + 1: i + 3]:
+            continues = out.endswith((",", "-", "–", "/")) or nxt[:1].islower()
+            if not nxt or not continues or nxt.startswith("---") or any(
+                    re.match(p, nxt, flags=re.IGNORECASE) for p in labels):
+                break
+            out = f"{out} {nxt}"
+        return out if out != line[at:] else value
+    return value
 
 
 def value_in_text(kind: str, raw: str, result, text: str) -> bool:

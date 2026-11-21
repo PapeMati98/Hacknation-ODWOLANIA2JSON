@@ -131,6 +131,33 @@ def resolve_duplicates(cls: DocClass, data: dict, trace: list[dict], text: str) 
                                    + (f"; w dokumencie leży przy polu {keep}" if keep else "; nie da się ustalić właściwego"))
 
 
+def _leaf_parents(data, path: str) -> list[tuple[dict, str]]:
+    """Słowniki zawierające pole spod ścieżki w rodzaju `pelnomocnicy[].imie_nazwisko` (do wyzerowania wartości)."""
+    *parts, leaf = path.split(".")
+    nodes = [data]
+    for part in parts:
+        is_list, key = part.endswith("[]"), part.removesuffix("[]")
+        found = []
+        for node in nodes:
+            value = node.get(key) if isinstance(node, dict) else None
+            if value is not None:
+                found.extend(value if is_list and isinstance(value, list) else [value])
+        nodes = found
+    return [(n, leaf) for n in nodes if isinstance(n, dict)]
+
+
+def _in_context(text: str, value: str, pattern: str) -> bool:
+    """Czy wartość stoi w dokumencie w linii (albo tuż po linii) pasującej do wzorca - np. nazwisko po
+    słowach „w imieniu spółki” albo przed funkcją „- Członek Zarządu”."""
+    lines = text.splitlines()
+    needle = fold(value)
+    rx = re.compile(pattern, re.IGNORECASE)
+    for i, line in enumerate(lines):
+        if needle in fold(line) and rx.search(" ".join(lines[max(0, i - 1): i + 1])):
+            return True
+    return False
+
+
 def apply_field_rules(cls: DocClass, data: dict, trace: list[dict], text: str = "") -> None:
     """Reguły zależności między polami jednego dokumentu, zapisane w YAML klasy:
 
@@ -138,7 +165,9 @@ def apply_field_rules(cls: DocClass, data: dict, trace: list[dict], text: str = 
                              `../pole=1` wskazuje pole poziom wyżej i wymaganą wartość (dane pełnomocnika
                              tylko wtedy, gdy strona działa przez pełnomocnika),
     not_in: <ścieżka>      - wartość nie może powtarzać wartości z innej listy (np. podpisujący
-                             pełnomocnictwo nie może być jednocześnie pełnomocnikiem).
+                             pełnomocnictwo nie może być jednocześnie pełnomocnikiem); `keep_when: <wzorzec>`
+                             odwraca rozstrzygnięcie, gdy linia dokumentu z tą wartością pasuje do wzorca
+                             (wtedy wartość zostaje tutaj, a znika z tamtej listy).
     or_from: <pole obok>   - model pomylił rubryki: gdy pole jest puste, a wartość wpisana w polu obok nie
                              przeszła tamtego walidatora, lecz przechodzi walidator tego pola i stoi w dokumencie,
                              wartość trafia tutaj (numer TED wpisany w rubrykę BZP).
@@ -174,7 +203,19 @@ def apply_field_rules(cls: DocClass, data: dict, trace: list[dict], text: str = 
             continue
         other = spec.get("not_in")
         if other and any(fold(str(value)) == fold(str(v)) for v in get_values(data, other)):
-            reject(path, parent, key, f"ta sama wartość występuje w {other}")
+            keep = spec.get("keep_when")
+            if keep and _in_context(text, str(value), keep):
+                # Dokument wprost pokazuje rolę tej osoby w tym polu: powtórzenie znika z drugiej listy.
+                for node, leaf in _leaf_parents(data, other):
+                    if node.get(leaf) is not None and fold(str(node[leaf])) == fold(str(value)):
+                        node[leaf] = None
+                        entry = next((t for t in trace if t.get("wartosc") == value and t["pole"] != path
+                                      and t["pole"].endswith(leaf)), None)
+                        if entry is not None:
+                            entry.update(wartosc=None, status="niezweryfikowane",
+                                         uwaga=f"ta sama osoba występuje w dokumencie w roli pola {path}")
+            else:
+                reject(path, parent, key, f"ta sama wartość występuje w {other}")
     _prune(cls.output, data)
 
 

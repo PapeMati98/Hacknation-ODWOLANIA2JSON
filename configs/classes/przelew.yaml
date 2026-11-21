@@ -62,6 +62,7 @@ output:
       type: string
       validator: text
       verify_in_text: true
+      wraps: true              # długi tytuł bywa złamany na dwie linie wydruku
       reject: *etykiety
       check: "treść tytułu przelewu (za co jest płatność), a nie etykieta rubryki"
       desc: "Tytuł przelewu przepisany dokładnie i w całości (także gdy zajmuje kilka linii) - treść przy etykiecie 'Tytuł', 'Tytułem', 'Opis', 'Szczegóły płatności' albo 'Tytuł operacji'. Wpisz samą treść, nie etykietę; numery i kody stojące w tytule (numer postępowania, kod płatności) są jego częścią. Gdy w dokumencie jest etykieta 'Tytuł', tytułem jest tekst po niej; nazwa rodzaju operacji (np. 'PRZELEW ELIXIR - ONLINE', 'Przelew krajowy') nie jest tytułem."

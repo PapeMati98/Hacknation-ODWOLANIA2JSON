@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_raw
 
 MIN_TEXT_CHARS = 80          # mniej znaków na stronie = strona traktowana jak skan
 LOW_CONF = 0.80
@@ -92,12 +93,14 @@ class Page:
     unreadable: int = 0
     alt_reads: dict[int, str] = field(default_factory=dict)   # DPI -> pełny tekst odczytu alternatywnego
     redactions: list[tuple[float, float, float, float]] = field(default_factory=list)   # czarne prostokąty
+    rotation: int = 0               # o ile stopni obrócono obraz strony, żeby tekst stał prosto (0, 90, 180, 270)
 
 
 @dataclass
 class Document:
     path: str
     pages: list[Page]
+    skipped: int = 0                # ile pustych stron z początku pliku pominięto (odwrócona kartka w podajniku)
 
     @property
     def is_scan(self) -> bool:
@@ -109,7 +112,8 @@ class Document:
         if count <= len(self.pages):
             return
         pdf = pdfium.PdfDocument(self.path)
-        self.pages += _read_pages(self.path, pdf, range(len(self.pages), min(count, len(pdf))))
+        first = self.skipped + len(self.pages)
+        self.pages += _read_pages(self.path, pdf, range(first, min(self.skipped + count, len(pdf))))
 
     def text(self, max_pages: int | None = None) -> str:
         pages = self.pages if max_pages is None else self.pages[:max_pages]
@@ -123,7 +127,8 @@ class Document:
         if line.box is None or not line.page:
             return None
         from PIL import Image
-        image = Image.fromarray(_render(pdfium.PdfDocument(self.path)[line.page - 1], dpi))
+        rotation = next((p.rotation for p in self.pages if p.number == line.page), 0)
+        image = Image.fromarray(_render(pdfium.PdfDocument(self.path)[line.page - 1], dpi, rotation))
         w, h = image.size
         x0, y0, x1, y1 = line.box
         if span is not None:
@@ -141,7 +146,7 @@ class Document:
             if missing:
                 pdf = pdfium.PdfDocument(self.path)
                 for p in missing:
-                    p.alt_reads[dpi] = _lines_text(_ocr_lines(_render(pdf[p.number - 1], dpi)))
+                    p.alt_reads[dpi] = _lines_text(_ocr_lines(_render(pdf[p.number - 1], dpi, p.rotation)))
         return "\n".join(p.alt_reads[dpi] for p in chosen)
 
 
@@ -199,10 +204,37 @@ def _ocr_lines(img: np.ndarray, with_angle: bool = False):
     return (lines, angle) if with_angle else lines
 
 
-def _render(page, dpi: int) -> np.ndarray:
+def _render(page, dpi: int, rotation: int = 0) -> np.ndarray:
     """Obraz strony w rozdzielczości `dpi` liczonej tak, jakby strona była kartką A4."""
     scale = dpi * A4_LONG_INCH / max(page.get_size())
-    return np.array(page.render(scale=scale).to_pil().convert("RGB"))
+    return np.array(page.render(scale=scale, rotation=rotation).to_pil().convert("RGB"))
+
+
+# Strona, na której niepewna jest większość linii, jest nieczytelna jako całość: ponowne czytanie każdej linii
+# z osobna niczego nie odzyskuje, a zajmuje kilkanaście sekund na stronę (limit czasu całej partii).
+MAX_LINE_REREADS = 12
+
+ROTATE_CONF = 0.88     # średnia pewność odczytu, poniżej której sprawdzamy, czy strona nie leży do góry nogami
+ROTATE_GAIN = 1.25     # o tyle lepszy musi być odczyt strony obróconej, żeby go przyjąć
+ROTATE_MIN_LINES = 3
+
+
+def _quality(lines: list) -> float:
+    """Ile czytelnego tekstu dał odczyt: znaki ważone pewnością linii."""
+    return sum(l.conf * len(l.text) for l in lines if l.conf >= 0.6)
+
+
+def _rotations_to_try(lines: list, width: int, height: int) -> tuple[int, ...]:
+    """Podejrzenie złej orientacji strony na podstawie odczytu: wysokie, wąskie ramki linii oznaczają stronę
+    leżącą bokiem, a niska pewność całej strony - być może stronę do góry nogami. Zwykła strona: brak prób."""
+    if len(lines) < ROTATE_MIN_LINES:
+        return ()
+    tall = sum(1 for l in lines if l.box and (l.box[3] - l.box[1]) * height > 1.5 * (l.box[2] - l.box[0]) * width)
+    if tall > len(lines) / 2:
+        return (90, 270)
+    if sum(l.conf for l in lines) / len(lines) < ROTATE_CONF:
+        return (180,)
+    return ()
 
 
 def find_redactions(img: np.ndarray, line_height: float) -> list[tuple[float, float, float, float]]:
@@ -273,12 +305,27 @@ def layout_text(lines: list[Line], redactions: list[tuple[float, float, float, f
 
 
 def ocr_page(page, all_reads: bool = False) -> tuple[list[Line], dict[int, str], list]:
-    """Zwraca (linie odczytu głównego po scaleniu skal, teksty odczytów alternatywnych wg DPI, czarne prostokąty).
+    """Zwraca (linie odczytu głównego po scaleniu skal, teksty odczytów alternatywnych wg DPI, czarne prostokąty)."""
+    return ocr_page_rotated(page, all_reads)[:3]
+
+
+def ocr_page_rotated(page, all_reads: bool = False) -> tuple[list[Line], dict[int, str], list, int]:
+    """Jak `ocr_page`, a dodatkowo obrót strony (0, 90, 180, 270), przy którym tekst stoi prosto.
 
     Gdy strona ma linie niepewne, jest czytana ponownie w kolejnych rozdzielczościach, a linie, które nadal
     są niepewne - z wycinka samej linii. `all_reads` - od razu komplet odczytów alternatywnych (usługa OCR)."""
     image = _render(page, BASE_DPI)
     lines, angle = _ocr_lines(image, with_angle=True)
+    rotation = 0
+    turns = _rotations_to_try(lines, image.shape[1], image.shape[0])
+    # Strona bokiem nie nadaje się do układu tekstu, więc wybieramy lepszy z dwóch obrotów; stronę podejrzaną
+    # o odwrócenie zamieniamy tylko wtedy, gdy odwrócona daje wyraźnie więcej czytelnego tekstu.
+    best = _quality(lines) * ROTATE_GAIN if turns == (180,) else -1.0
+    for turn in turns:
+        turned = _render(page, BASE_DPI, turn)
+        turned_lines, turned_angle = _ocr_lines(turned, with_angle=True)
+        if _quality(turned_lines) > best:
+            best, rotation, image, lines, angle = _quality(turned_lines), turn, turned, turned_lines, turned_angle
     heights = sorted(l.lay[3] - l.lay[1] for l in lines if l.lay)
     redactions = find_redactions(image, heights[len(heights) // 2] if heights else 0.012)
     if angle:                                   # prostokąty w tych samych, wyprostowanych współrzędnych co linie
@@ -289,7 +336,7 @@ def ocr_page(page, all_reads: bool = False) -> tuple[list[Line], dict[int, str],
     for dpi in ALT_DPIS:
         if all(l.conf >= LOW_CONF for l in lines):
             break                               # wszystkie linie pewne: kolejny odczyt tylko na żądanie
-        alt = _ocr_lines(_render(page, dpi))
+        alt = _ocr_lines(_render(page, dpi, rotation))
         reads[dpi] = _lines_text(alt)
         for i, line in enumerate(lines):
             if line.conf >= LOW_CONF:
@@ -298,14 +345,16 @@ def ocr_page(page, all_reads: bool = False) -> tuple[list[Line], dict[int, str],
             best = min(alt, key=lambda a: abs(a.y - line.y), default=None)
             if best and abs(best.y - line.y) < 0.006 and best.conf > line.conf:
                 lines[i] = best
+    budget = MAX_LINE_REREADS
     for i, line in enumerate(lines):            # ostatnia próba: sama linia w innych powiększeniach
-        if line.conf < LOW_CONF:
+        if line.conf < LOW_CONF and budget > 0:
             lines[i] = _reread_line(image, line)
+            budget -= 1
     if all_reads:
         for dpi in ALT_DPIS:
             if dpi not in reads:
-                reads[dpi] = _lines_text(_ocr_lines(_render(page, dpi)))
-    return lines, reads, redactions
+                reads[dpi] = _lines_text(_ocr_lines(_render(page, dpi, rotation)))
+    return lines, reads, redactions, rotation
 
 
 def _reread_line(image: np.ndarray, line: Line) -> Line:
@@ -344,7 +393,62 @@ def load(path: str, max_pages: int | None = None) -> Document:
     pdf = pdfium.PdfDocument(path)
     pages = []
     n = len(pdf) if max_pages is None else min(max_pages, len(pdf))
-    return Document(path, _read_pages(path, pdf, range(n)))
+    doc = Document(path, _read_pages(path, pdf, range(n)))
+    # Pusta strona na początku skanu (odwrócona kartka, okładka): dokument zaczyna się od pierwszej strony z treścią.
+    while (doc.pages and doc.skipped < MAX_BLANK_SKIP and _blank(doc.pages[0])
+           and doc.skipped + len(doc.pages) < len(pdf)):
+        doc.pages.pop(0)
+        doc.skipped += 1
+        doc.pages += _read_pages(path, pdf, range(doc.skipped + len(doc.pages), min(doc.skipped + n, len(pdf))))
+    return doc
+
+
+MAX_BLANK_SKIP = 3
+
+
+def _blank(page: Page) -> bool:
+    """Strona skanu bez treści: OCR nie znalazł na niej nawet 20 znaków."""
+    return page.source == "ocr" and sum(len(l.text) for l in page.lines) < 20
+
+
+_POLISH = set("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ")
+_PUNCT = set(".,;:()[]{}-–—/\\\"'„”«»’%@&§+°*·•_=#!?<>|~^`$€£№…‚")
+_VOWELS = set("aeiouyąęóAEIOUYĄĘÓ")
+
+
+def text_layer_ok(text: str, page_is_image: bool = False) -> bool:
+    """Czy warstwa tekstowa strony nadaje się do użycia. Odrzucamy tekst, który nie wygląda jak pismo:
+    obce znaki zamiast liter (zepsute kodowanie fontu), „słowa” bez samogłosek i z przypadkową wielkością liter
+    (śmieci po OCR skanera), a na stronie będącej obrazem - także długi tekst bez ani jednego polskiego znaku
+    (słaby OCR skanera). Taka strona jest czytana własnym OCR."""
+    chars = [c for c in text if not c.isspace()]
+    if len(chars) < MIN_TEXT_CHARS:
+        return True
+    known = sum(1 for c in chars if c.isdigit() or c in _PUNCT or (c.isalpha() and ord(c) < 0x250))
+    if known / len(chars) < 0.85:
+        return False
+    words = re.findall(r"[^\W\d_]{3,}", text)
+    if len(words) >= 10:
+        plain = sum(1 for w in words if _VOWELS & set(w) and (w.islower() or w.isupper() or w.istitle()))
+        if plain / len(words) < 0.6:
+            return False
+    letters = sum(1 for c in chars if c.isalpha())
+    if page_is_image and letters >= 300 and not _POLISH & set(chars):
+        return False
+    return True
+
+
+def _is_page_image(page) -> bool:
+    """Strona jest skanem: jeden obraz zajmuje co najmniej 70% jej powierzchni (tekst to tylko dodana warstwa)."""
+    try:
+        width, height = page.get_size()
+        for obj in page.get_objects(filter=[pdfium_raw.FPDF_PAGEOBJ_IMAGE], max_depth=1):
+            left, bottom, right, top = obj.get_bounds()
+            if (right - left) * (top - bottom) >= 0.7 * width * height:
+                return True
+    except Exception:       # nietypowa budowa strony: traktujemy ją jak zwykły PDF tekstowy
+        return False
+    return False
 
 
 def _read_pages(path: str, pdf, indices) -> list[Page]:
@@ -353,17 +457,17 @@ def _read_pages(path: str, pdf, indices) -> list[Page]:
     scans = []
     for i in indices:
         text = pdf[i].get_textpage().get_text_range().replace("\r\n", "\n").strip()
-        if len(text) >= MIN_TEXT_CHARS:
+        if len(text) >= MIN_TEXT_CHARS and text_layer_ok(text, _is_page_image(pdf[i])):
             pages[i] = Page(i + 1, "text", text)
         else:
             scans.append(i)
     remote = remote_ocr(path, scans) if scans and os.environ.get("O2J_OCR_BASE") else None
     for i in scans:
-        lines, reads, redactions = remote[i] if remote else ocr_page(pdf[i])
+        lines, reads, redactions, rotation = (*remote[i], 0) if remote else ocr_page_rotated(pdf[i])
         for line in lines:
             line.page = i + 1
         bad = sum(1 for l in lines if l.conf < LOW_CONF)
-        pages[i] = Page(i + 1, "ocr", layout_text(lines, redactions), lines, bad, reads, redactions)
+        pages[i] = Page(i + 1, "ocr", layout_text(lines, redactions), lines, bad, reads, redactions, rotation)
     return [pages[i] for i in indices]
 
 
