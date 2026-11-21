@@ -1,0 +1,45 @@
+{
+  "OdwolanieKIO": {
+    "data": "2026-03-15",
+    "czynnosc_dzien": "2026-03-07",
+    "czynnosc_powod_id": 10,
+    "czynnosc_opis": "Zaniechanie unieważnienia postępowania",
+    "miejscowosc": "Warszawa"
+  },
+  "Odwolujacy": [
+    {
+      "krs": "9993774729",
+      "nazwa": "Datanet Energia sp.k.",
+      "nip": "9997166232",
+      "regon": "999604767",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Barbara Górecka",
+        "nazwa": "Górecka i Wspólnicy Kancelaria Prawna sp.k.",
+        "mail": "biuro@gorecka-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": "9990582648",
+      "nazwa": "Szpital Wojewódzki im. Jana Pawła II w Zamościu",
+      "nip": "9994759339",
+      "regon": "999252191",
+      "prowadzacy_postepowanie": 1
+    },
+    {
+      "krs": "9992700248",
+      "nazwa": "Akademia Muzyczna w Bydgoszczy",
+      "nip": "9992052400",
+      "regon": "999658421",
+      "prowadzacy_postepowanie": 0
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": null,
+    "numer_postepowania": "IZ.272.10.2026.AK",
+    "numer_ted": "462258-2026",
+    "tytul": "Budowa sali gimnastycznej wraz z zapleczem przy Szkole Podstawowej nr 3"
+  }
+}

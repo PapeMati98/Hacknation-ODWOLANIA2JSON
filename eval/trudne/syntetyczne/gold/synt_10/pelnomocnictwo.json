@@ -1,0 +1,42 @@
+{
+  "mocodawca": [
+    {
+      "data": {
+        "imie_nazwisko": null,
+        "krs": "9997525131",
+        "nazwa": "Gratan Medical sp. z o.o.",
+        "nip": "9994265011",
+        "typ": "osoba_prawna"
+      },
+      "podpisujacy": [
+        {
+          "imie_nazwisko": "Katarzyna Wiśniewska"
+        }
+      ]
+    },
+    {
+      "data": {
+        "imie_nazwisko": null,
+        "krs": "9993172520",
+        "nazwa": "Brontex Energia S.A.",
+        "nip": "9998625156",
+        "typ": "osoba_prawna"
+      },
+      "podpisujacy": [
+        {
+          "imie_nazwisko": "Anna Kowalska"
+        }
+      ]
+    }
+  ],
+  "pelnomocnicy": [
+    {
+      "imie_nazwisko": "Joanna Kaczmarek",
+      "pesel": null
+    },
+    {
+      "imie_nazwisko": "Piotr Nowak",
+      "pesel": null
+    }
+  ]
+}

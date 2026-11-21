@@ -1,0 +1,38 @@
+{
+  "OdwolanieKIO": {
+    "data": null,
+    "czynnosc_dzien": "2026-07-15",
+    "czynnosc_powod_id": 12,
+    "czynnosc_opis": "Projektowane postanowienia umowy",
+    "miejscowosc": null
+  },
+  "Odwolujacy": [
+    {
+      "krs": "9995396304",
+      "nazwa": "Wikomed Logistyka sp.k.",
+      "nip": "9990649163",
+      "regon": "999525921",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Michał Dąbrowski",
+        "nazwa": "Kancelaria Radcy Prawnego Michał Dąbrowski",
+        "mail": "biuro@dabrowski-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": "9994026741",
+      "nazwa": "Akademia Muzyczna w Bydgoszczy",
+      "nip": "9999697985",
+      "regon": "999189446",
+      "prowadzacy_postepowanie": null
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": "2026/BZP00578537",
+    "numer_postepowania": "ZP.271.75.2026",
+    "numer_ted": null,
+    "tytul": "Dostawa sprzętu komputerowego i oprogramowania dla jednostek oświatowych"
+  }
+}

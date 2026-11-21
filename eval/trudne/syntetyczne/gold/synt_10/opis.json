@@ -1,0 +1,14 @@
+{
+  "rodzaj": "skan",
+  "poziom": "trudna",
+  "powod_id": 6,
+  "cechy": {
+    "skan": true,
+    "konsorcjum": true,
+    "odmiana": true,
+    "pieczatka": true,
+    "bzp_spacja": true,
+    "rachunek_spacje": true
+  },
+  "dokumenty_spoza_klas": []
+}

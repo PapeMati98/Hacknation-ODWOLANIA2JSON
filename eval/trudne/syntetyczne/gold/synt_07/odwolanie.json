@@ -1,0 +1,38 @@
+{
+  "OdwolanieKIO": {
+    "data": "2026-04-11",
+    "czynnosc_dzien": "2026-04-02",
+    "czynnosc_powod_id": 3,
+    "czynnosc_opis": "Decyzja o wykluczeniu wykonawcy",
+    "miejscowosc": "Katowice"
+  },
+  "Odwolujacy": [
+    {
+      "krs": "9993976299",
+      "nazwa": "Wikomed Logistyka S.A.",
+      "nip": "9998640842",
+      "regon": "999598966",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Łukasz Sikora",
+        "nazwa": "Kancelaria Radcy Prawnego Łukasz Sikora",
+        "mail": "biuro@sikora-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": "9996624296",
+      "nazwa": "Centrum Usług Wspólnych Powiatu Gnieźnieńskiego",
+      "nip": "9997958128",
+      "regon": "999141942",
+      "prowadzacy_postepowanie": null
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": "2026/BZP00717535",
+    "numer_postepowania": "IZ.272.13.2026.AK",
+    "numer_ted": null,
+    "tytul": "Pełnienie funkcji inżyniera kontraktu dla zadania „Modernizacja oczyszczalni ścieków”"
+  }
+}

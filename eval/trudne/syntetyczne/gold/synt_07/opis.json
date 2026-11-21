@@ -1,0 +1,12 @@
+{
+  "rodzaj": "skan",
+  "poziom": "zwykła",
+  "powod_id": 3,
+  "cechy": {
+    "skan": true,
+    "kio": 1
+  },
+  "dokumenty_spoza_klas": [
+    "postanowienie_kio"
+  ]
+}

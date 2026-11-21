@@ -1,0 +1,28 @@
+{
+  "mocodawca": [
+    {
+      "data": {
+        "imie_nazwisko": null,
+        "krs": "9992506544",
+        "nazwa": "Interlux Infrastruktura sp. z o.o.",
+        "nip": "9995839069",
+        "typ": "osoba_prawna"
+      },
+      "podpisujacy": [
+        {
+          "imie_nazwisko": "Anna Kowalska"
+        }
+      ]
+    }
+  ],
+  "pelnomocnicy": [
+    {
+      "imie_nazwisko": "Łukasz Sikora",
+      "pesel": null
+    },
+    {
+      "imie_nazwisko": "Ewa Michalska",
+      "pesel": null
+    }
+  ]
+}

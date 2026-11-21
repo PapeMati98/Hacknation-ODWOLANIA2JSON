@@ -1,0 +1,28 @@
+{
+  "mocodawca": [
+    {
+      "data": {
+        "imie_nazwisko": null,
+        "krs": "9995428835",
+        "nazwa": "Wikomed Infrastruktura S.A.",
+        "nip": "9998415200",
+        "typ": "osoba_prawna"
+      },
+      "podpisujacy": [
+        {
+          "imie_nazwisko": "Zofia Adamczyk"
+        }
+      ]
+    }
+  ],
+  "pelnomocnicy": [
+    {
+      "imie_nazwisko": "Robert Mazurek",
+      "pesel": null
+    },
+    {
+      "imie_nazwisko": "Krzysztof Pawlak",
+      "pesel": null
+    }
+  ]
+}

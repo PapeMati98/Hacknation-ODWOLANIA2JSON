@@ -1,0 +1,12 @@
+{
+  "rodzaj": "skan",
+  "poziom": "zwykła",
+  "powod_id": 9,
+  "cechy": {
+    "skan": true,
+    "negatyw": "wybor"
+  },
+  "dokumenty_spoza_klas": [
+    "zawiadomienie_o_wyborze"
+  ]
+}

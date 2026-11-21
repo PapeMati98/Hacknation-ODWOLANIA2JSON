@@ -1,0 +1,38 @@
+{
+  "OdwolanieKIO": {
+    "data": "2026-05-19",
+    "czynnosc_dzien": "2026-05-12",
+    "czynnosc_powod_id": 2,
+    "czynnosc_opis": "Ogłoszenie wyboru oferty",
+    "miejscowosc": "Szczecin"
+  },
+  "Odwolujacy": [
+    {
+      "krs": "9992506544",
+      "nazwa": "Interlux Infrastruktura sp. z o.o.",
+      "nip": "9995839069",
+      "regon": "999939500",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Łukasz Sikora",
+        "nazwa": "Sikora i Wspólnicy Kancelaria Prawna sp.k.",
+        "mail": "biuro@sikora-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": "9999714130",
+      "nazwa": "Zarząd Dróg Powiatowych w Kutnie",
+      "nip": "9996737566",
+      "regon": "999890997",
+      "prowadzacy_postepowanie": null
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": null,
+    "numer_postepowania": "DZP/201/26",
+    "numer_ted": "890513-2026",
+    "tytul": "Dostawa pojazdu ratowniczo-gaśniczego z napędem 4x4"
+  }
+}

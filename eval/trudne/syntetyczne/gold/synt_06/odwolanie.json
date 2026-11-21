@@ -1,0 +1,38 @@
+{
+  "OdwolanieKIO": {
+    "data": "2026-09-11",
+    "czynnosc_dzien": "2026-09-03",
+    "czynnosc_powod_id": 7,
+    "czynnosc_opis": "Zaniechanie odrzucenia oferty",
+    "miejscowosc": "Lublin"
+  },
+  "Odwolujacy": [
+    {
+      "krs": "9993761310",
+      "nazwa": "Ekoprim Budownictwo Spółka z ograniczoną odpowiedzialnością",
+      "nip": "9993581589",
+      "regon": "999717069",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Dorota Baran",
+        "nazwa": "Kancelaria Radcy Prawnego Dorota Baran",
+        "mail": "biuro@baran-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": "9995811664",
+      "nazwa": "Teatr Miejski w Gliwicach",
+      "nip": "9992121779",
+      "regon": "999443956",
+      "prowadzacy_postepowanie": null
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": "2026/BZP00553594",
+    "numer_postepowania": "SZP-15/2026",
+    "numer_ted": null,
+    "tytul": "Dostawa pojazdu ratowniczo-gaśniczego z napędem 4x4"
+  }
+}

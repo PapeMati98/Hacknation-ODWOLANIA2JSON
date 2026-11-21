@@ -1,0 +1,45 @@
+{
+  "OdwolanieKIO": {
+    "data": "2026-09-24",
+    "czynnosc_dzien": "2026-09-16",
+    "czynnosc_powod_id": 5,
+    "czynnosc_opis": "Modyfikacja treści SWZ",
+    "miejscowosc": "Kraków"
+  },
+  "Odwolujacy": [
+    {
+      "krs": "9997405747",
+      "nazwa": "Interlux Medical sp. z o.o.",
+      "nip": "9995807520",
+      "regon": "999312378",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Katarzyna Wiśniewska",
+        "nazwa": "Wiśniewska i Wspólnicy Kancelaria Prawna sp.k.",
+        "mail": "biuro@wisniewska-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": "9995850203",
+      "nazwa": "Zakład Gospodarki Komunalnej w Koninie Sp. z o.o.",
+      "nip": "9997796269",
+      "regon": "999371613",
+      "prowadzacy_postepowanie": 1
+    },
+    {
+      "krs": "9994376202",
+      "nazwa": "Centrum Usług Wspólnych Powiatu Gnieźnieńskiego",
+      "nip": "9996943343",
+      "regon": "999136214",
+      "prowadzacy_postepowanie": 0
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": "2026/BZP00159216",
+    "numer_postepowania": "SZP-27/2026",
+    "numer_ted": null,
+    "tytul": "Przebudowa drogi powiatowej nr 2104E na odcinku Krośniewice – Nowe"
+  }
+}
