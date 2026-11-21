@@ -120,3 +120,39 @@ def test_field_rules_from_yaml():
 def test_quotes_are_not_part_of_names():
     assert norm_text('BIOARCUS"Spółka z o.o.').value == "BIOARCUS Spółka z o.o."
     assert norm_text("„ALFA” S.A.").value == "ALFA S.A."
+
+
+def _scan(line: str, conf: float, alt: str):
+    """Jednostronicowy skan z jedną linią odczytu głównego i gotowymi odczytami alternatywnymi."""
+    from odwolania2json.pdfio import ALT_DPIS, Document, Line, Page
+    return Document("", [Page(1, "ocr", line, [Line(line, conf, 0.5)], 0, {dpi: alt for dpi in ALT_DPIS})])
+
+
+def test_bad_checksum_number_kept_only_with_high_confidence():
+    from odwolania2json import extract
+    bad = "9998031631"                                   # NIP ze złą sumą kontrolną, bez jednoznacznej poprawki
+    line = f"NIP: {bad}"
+    check = lambda doc: extract.cross_check_ocr(doc, "nip", bad, doc.text(None), None, "nieczytelne", "nip: zła suma")
+    value, status, _, conf = check(_scan(line, 0.99, line))
+    assert (value, status, conf["poziom"]) == (bad, "ostrzezenie", "wysoka")       # pewna linia + zgodny inny odczyt
+    value, status, _, conf = check(_scan(line, 0.90, line))
+    assert (value, status, conf["poziom"]) == (None, "nieczytelne", "srednia")     # linia mało pewna
+    from odwolania2json.validators import nip_ok
+    other = next(v for v in (bad[:6] + d + bad[7:] for d in "0123456789") if v != bad and not nip_ok(v))
+    value, status, _, conf = check(_scan(line, 0.99, f"NIP: {other}"))
+    assert (value, status, conf["poziom"]) == (None, "nieczytelne", "niska")       # inny odczyt daje inną wartość
+    extract.CHECKSUM_POLICY = "strict"
+    try:
+        assert check(_scan(line, 0.99, line))[0] is None
+    finally:
+        extract.CHECKSUM_POLICY = "confidence"
+
+
+def test_value_without_checksum_follows_confidence():
+    from odwolania2json import extract
+    line = "KRS: 0000123456"
+    check = lambda doc: extract.cross_check_ocr(doc, "krs", "0000123456", doc.text(None), "0000123456", "ok", "")
+    assert check(_scan(line, 0.99, line))[1] == "ok"
+    assert check(_scan(line, 0.90, line))[1] == "ostrzezenie"                      # zostaje, ale do sprawdzenia
+    assert check(_scan(line, 0.99, "zupełnie inna linia"))[1] == "ostrzezenie"     # inny odczyt nie zawiera linii
+    assert check(_scan(line, 0.99, "KRS: 0000128456"))[0] is None                  # sprzeczne odczyty

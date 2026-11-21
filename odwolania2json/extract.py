@@ -186,8 +186,10 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
     from_ocr = doc.is_scan
     entry = {"pole": path, "surowa": value, "zrodlo": "ocr" if from_ocr else "warstwa_tekstowa"}
 
-    def done(result, status, note=""):
+    def done(result, status, note="", confidence=None):
         entry.update(wartosc=result, status=status, uwaga=note)
+        if confidence:
+            entry["pewnosc"] = confidence
         trace.append(entry)
         return result
 
@@ -229,52 +231,92 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
         # Data, kwota, numer ogłoszenia, e-mail: model nie może podać wartości, której w dokumencie nie ma.
         result, status, note = None, "niezweryfikowane", "wartości nie ma w tekście dokumentu"
 
+    confidence = None
     if from_ocr:
-        result, status, note = cross_check_ocr(doc, kind, value, text, result, status, note)
+        result, status, note, confidence = cross_check_ocr(doc, kind, value, text, result, status, note)
 
     if result is not None and spec.get("output_type") == "integer":
         result = int(result)
-    return done(result, status, note)
+    return done(result, status, note, confidence)
 
 
 CHECKSUM_KINDS = {"nip", "regon", "pesel", "nrb"}
-# Numer ze skanu ze złą sumą kontrolną, którego nie da się naprawić:
-#   strict (domyślnie) - null i pozycja do sprawdzenia (zasada: lepiej nie wpisać niż wpisać błędnie),
-#   agree              - zostaje z ostrzeżeniem, jeśli potwierdził go inny, niezależny odczyt OCR
-#                        (na wypadek dokumentów z fikcyjnymi numerami, jak w danych przykładowych).
-CHECKSUM_POLICY = os.environ.get("O2J_OCR_CHECKSUM", "strict")
+HIGH_LINE_CONF = 0.95      # pewność linii OCR, od której odczyt uznajemy za wysoki (poprawne numery na skanach: 0,945-0,99)
+# Numer ze skanu ze złą sumą kontrolną, którego nie da się naprawić (decyzja właściciela 2026-11-21):
+#   confidence (domyślnie) - zależy od wskaźnika pewności odczytu: wysoka -> zostaje z ostrzeżeniem, inaczej null,
+#   strict                 - zawsze null i pozycja do sprawdzenia.
+CHECKSUM_POLICY = os.environ.get("O2J_OCR_CHECKSUM", "confidence")
+
+
+def line_conf(doc: Document, probe: str) -> float | None:
+    """Pewność OCR linii zawierającej wartość (najlepsza, gdy wartość występuje kilka razy)."""
+    key = _compact(probe)
+    confs = [l.conf for p in doc.pages for l in p.lines if key and key in _compact(l.text)]
+    return max(confs) if confs else None
+
+
+def ocr_confidence(doc: Document, probe: str, text: str) -> dict:
+    """Wskaźnik pewności wartości odczytanej ze skanu.
+
+    Składniki: pewność linii podawana przez OCR oraz werdykt innych, niezależnych odczytów strony.
+      wysoka      - linia pewna (>= HIGH_LINE_CONF) i inny odczyt daje tę samą wartość,
+      srednia     - brak sprzeczności, ale linia mniej pewna albo inny odczyt jej nie zawiera,
+      niska       - inny odczyt daje w tym miejscu inną wartość,
+      nieokreslona - wartości w tej postaci nie ma w odczycie głównym (nie da się porównać).
+    """
+    verdict, conf = ocr_confirms(doc, probe, text), line_conf(doc, probe)
+    if verdict is None:
+        level = "nieokreslona"
+    elif verdict == "rozbiezne":
+        level = "niska"
+    elif verdict == "zgodne" and conf is not None and conf >= HIGH_LINE_CONF:
+        level = "wysoka"
+    else:
+        level = "srednia"
+    return {"poziom": level, "pewnosc_linii": None if conf is None else round(conf, 3),
+            "inny_odczyt": {"zgodne": "zgodny", "rozbiezne": "inna wartość", "brak": "linia nieodczytana", None: None}[verdict]}
+
+
+def _describe(c: dict) -> str:
+    return f"pewność odczytu {c['poziom']}: linia {c['pewnosc_linii']}, inny odczyt: {c['inny_odczyt']}"
 
 
 def cross_check_ocr(doc: Document, kind: str, value: str, text: str, result, status: str, note: str):
     """Kontrola krzyżowa wartości ze skanu na niezależnych odczytach OCR (inne rozdzielczości).
 
-    Numery z poprawną sumą kontrolną są potwierdzone inaczej; nazwisk i długich tekstów nie porównujemy
-    znak po znaku (różnice w znakach diakrytycznych nie zmieniają znaczenia).
+    Zwraca (wartość, status, uwaga, wskaźnik pewności). Numery z poprawną sumą kontrolną są potwierdzone
+    inaczej; nazwisk i długich tekstów nie porównujemy znak po znaku (różnice w znakach diakrytycznych
+    nie zmieniają znaczenia).
     """
     if kind in CHECKSUM_KINDS and status == "naprawiono":
         # Poprawka jednego znaku na podstawie sumy kontrolnej musi być widoczna w innym odczycie.
         if any(digits_in_text(str(result), doc.alt_text(dpi)) for dpi in ALT_DPIS):
-            return result, status, note + "; potwierdzone innym odczytem OCR"
+            return result, status, note + "; potwierdzone innym odczytem OCR", None
         result, status, note = None, "nieczytelne", note + "; poprawki nie potwierdza żaden inny odczyt OCR"
     if kind in CHECKSUM_KINDS and result is None and status == "nieczytelne":
         for dpi in ALT_DPIS:                    # może inny odczyt ma ten numer z poprawną sumą
             other = snap_digits(value, doc.alt_text(dpi), kind)
             if other and VALIDATORS[kind](other, True).status == "ok":
-                return other, "naprawiono", f"{value!r} -> numer z innego odczytu OCR (poprawna suma kontrolna)"
+                return other, "naprawiono", f"{value!r} -> numer z innego odczytu OCR (poprawna suma kontrolna)", None
         digits = digits_from_ocr(value)
-        if CHECKSUM_POLICY == "agree" and len(digits) in ID_LENGTHS[kind] and ocr_confirms(doc, digits, text) == "zgodne":
-            return digits, "ostrzezenie", "zła suma kontrolna, ale numer potwierdza inny odczyt OCR"
-        return result, status, note
+        if kind == "nrb":
+            digits = re.sub(r"\D", "", digits)
+        if CHECKSUM_POLICY != "strict" and len(digits) in ID_LENGTHS[kind]:
+            conf = ocr_confidence(doc, digits, text)
+            if conf["poziom"] == "wysoka":
+                return digits, "ostrzezenie", f"zła suma kontrolna; {_describe(conf)}", conf
+            return None, "nieczytelne", f"zła suma kontrolna; {_describe(conf)}", conf
+        return result, status, note, None
     if result is None or not needs_second_read(kind, value, status):
-        return result, status, note
-    verdict = ocr_confirms(doc, str(result) if kind in ID_LENGTHS else value, text)
-    if verdict == "rozbiezne":
-        return None, "nieczytelne", "niezależne odczyty OCR dają różne wartości"
-    if verdict == "brak":
-        return result, "ostrzezenie", "wartości nie potwierdził inny odczyt OCR (linia nieodczytana)"
-    if verdict == "zgodne" and not note:
-        note = "potwierdzone innym odczytem OCR"
-    return result, status, note
+        return result, status, note, None
+    conf = ocr_confidence(doc, str(result) if kind in ID_LENGTHS else value, text)
+    if conf["poziom"] == "niska":
+        return None, "nieczytelne", f"niezależne odczyty OCR dają różne wartości; {_describe(conf)}", conf
+    if conf["poziom"] == "srednia":
+        return result, "ostrzezenie", _describe(conf), conf
+    if conf["poziom"] == "wysoka" and not note:
+        note = _describe(conf)
+    return result, status, note, conf
 
 
 def ocr_confirms(doc: Document, probe: str, text: str) -> str | None:

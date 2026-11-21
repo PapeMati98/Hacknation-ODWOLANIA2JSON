@@ -34,9 +34,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", default=os.environ.get("O2J_MODEL", str(APP_ROOT / "models" / "Qwen3.5-4B-Q4_K_M.gguf")))
     ap.add_argument("--threads", type=int, default=int(os.environ.get("O2J_THREADS", default_threads())))
     ap.add_argument("--only", help="przetwórz tylko te sprawy (lista po przecinku)")
-    ap.add_argument("--ocr-checksum", choices=("strict", "agree"), default=extract.CHECKSUM_POLICY,
-                    help="numer ze skanu ze złą sumą kontrolną: strict = null i pozycja do sprawdzenia (domyślnie); "
-                         "agree = zostaje z ostrzeżeniem, gdy potwierdza go inny, niezależny odczyt OCR")
+    ap.add_argument("--ocr-checksum", choices=("confidence", "strict"), default=extract.CHECKSUM_POLICY,
+                    help="numer ze skanu ze złą sumą kontrolną: confidence = zostaje z ostrzeżeniem przy wysokiej "
+                         "pewności odczytu, inaczej null (domyślnie); strict = zawsze null")
     args = ap.parse_args(argv)
     sys.stdout.reconfigure(encoding="utf-8")
     extract.CHECKSUM_POLICY = args.ocr_checksum

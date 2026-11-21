@@ -59,7 +59,7 @@ Plik JSON ma tę samą nazwę co PDF i leży w podfolderze tej samej sprawy. Obo
 | `--model` / `O2J_MODEL` | plik GGUF modelu lokalnego | `models/Qwen3.5-4B-Q4_K_M.gguf` |
 | `--cross-checks` | reguły kontroli krzyżowej między dokumentami sprawy | `configs/cross_checks.yaml` |
 | `--threads` / `O2J_THREADS` | liczba wątków CPU | połowa rdzeni, najwyżej 6 |
-| `--ocr-checksum` / `O2J_OCR_CHECKSUM` | numer ze skanu ze złą sumą kontrolną: `strict` = `null` i pozycja do sprawdzenia; `agree` = zostaje z ostrzeżeniem, gdy potwierdza go inny, niezależny odczyt OCR | `strict` |
+| `--ocr-checksum` / `O2J_OCR_CHECKSUM` | numer ze skanu ze złą sumą kontrolną: `confidence` = zostaje z ostrzeżeniem przy wysokiej pewności odczytu, inaczej `null`; `strict` = zawsze `null` | `confidence` |
 | `O2J_API_BASE`, `O2J_API_MODEL`, `O2J_API_KEY` | model serwowany przez API zgodne z OpenAI (zamiast lokalnego) | — |
 
 ## Architektura
@@ -91,6 +91,7 @@ Model lokalny wypełnia formularz w sposób prowadzony: klucze podaje mu kod (sz
 Sprawdzenie pojedynczego pola nie wystarcza: KRS, daty, kwoty i numery ogłoszeń nie mają sumy kontrolnej, a poprawny numer może trafić do niewłaściwego podmiotu. Dlatego wynik przechodzi dodatkowe kontrole:
 
 1. **Niezależne odczyty skanu.** Każda strona skanu jest czytana w dwóch rozdzielczościach, a przy wątpliwości w trzeciej. Wartość bez sumy kontrolnej (KRS, data, kwota, numer BZP/TED, sygnatura, numer transakcji) musi powtórzyć się w innym odczycie. Inny odczyt daje inną wartość → `null`. Inny odczyt w ogóle nie zawiera tej linii → wartość zostaje z ostrzeżeniem. Poprawka numeru o jeden znak na podstawie sumy kontrolnej jest przyjmowana tylko wtedy, gdy poprawiony numer widać w innym odczycie.
+   **Wskaźnik pewności** każdej wartości ze skanu łączy pewność linii podawaną przez OCR z werdyktem innych odczytów: *wysoka* — linia pewna (≥ 0,95) i inny odczyt daje to samo; *średnia* — brak sprzeczności, ale linia mniej pewna albo inny odczyt jej nie zawiera; *niska* — inny odczyt daje inną wartość. Niska → `null`; średnia → wartość zostaje z ostrzeżeniem. Numer ze złą sumą kontrolną zostaje (z ostrzeżeniem) tylko przy pewności wysokiej. Wskaźnik jest zapisany w śladzie i na liście do sprawdzenia.
 2. **Wartość musi być w dokumencie.** Dotyczy każdego pola, także dat, kwot i numerów ogłoszeń: model nie może podać wartości, której w tekście nie ma (np. przepisanej z instrukcji).
 3. **Kontrola przypisania.** Ten sam NIP / KRS / REGON / rachunek nie może trafić do kilku pól. Numer zostaje przy tym podmiocie, przy którego nazwie leży w dokumencie; gdy nie da się tego ustalić — znika ze wszystkich pól.
 4. **Zależności między polami** (w YAML klasy): `requires` — pole ma sens tylko razem z innym (miejscowość z nagłówka tylko z datą); `not_in` — wartość nie może powtarzać się na innej liście (podpisujący pełnomocnictwo nie może być pełnomocnikiem).
@@ -106,7 +107,7 @@ Dla każdego pola w `trace/<sprawa>/<plik>.trace.json` zapisywane są: wartość
 | `ok` | wartość przeszła walidację |
 | `naprawiono` | błąd OCR jednego znaku poprawiony na podstawie sumy kontrolnej |
 | `dopasowano` | wartość modelu zastąpiona dosłownym fragmentem dokumentu (ucięte słowo, zmieniona końcówka, niepełny numer) |
-| `ostrzezenie` | wartość zachowana, ale trafia na listę do sprawdzenia: zła suma kontrolna przy odczycie dokładnym (warstwa tekstowa) albo brak potwierdzenia w drugim odczycie OCR |
+| `ostrzezenie` | wartość zachowana, ale trafia na listę do sprawdzenia: zła suma kontrolna przy odczycie dokładnym (warstwa tekstowa) albo przy wysokiej pewności odczytu ze skanu; średnia pewność odczytu ze skanu |
 | `nieczytelne` | wartość z OCR nie przechodzi walidacji i nie da się jej jednoznacznie naprawić albo dwa odczyty OCR się różnią → `null` |
 | `niezweryfikowane` | wartości nie ma w tekście dokumentu, numer przypisano do kilku pól albo pole łamie regułę `requires` / `not_in` → `null` |
 | `brak` | informacji nie ma w dokumencie |

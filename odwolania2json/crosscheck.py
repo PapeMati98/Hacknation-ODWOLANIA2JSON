@@ -209,8 +209,10 @@ def review_entries(file_name: str, trace: list[dict]) -> list[dict]:
     for t in trace:
         if t["status"] in REJECTED:
             out.append({"typ": "pole_odrzucone", "plik": file_name, "pole": t["pole"],
-                        "proponowana_wartosc": t.get("surowa"), "powod": t.get("uwaga", ""), "zrodlo": t.get("zrodlo")})
+                        "proponowana_wartosc": t.get("surowa"), "powod": t.get("uwaga", ""), "zrodlo": t.get("zrodlo"),
+                        "pewnosc": t.get("pewnosc")})
         elif t["status"] == "ostrzezenie":
             out.append({"typ": "pole_z_ostrzezeniem", "plik": file_name, "pole": t["pole"],
-                        "wartosc": t.get("wartosc"), "powod": t.get("uwaga", ""), "zrodlo": t.get("zrodlo")})
+                        "wartosc": t.get("wartosc"), "powod": t.get("uwaga", ""), "zrodlo": t.get("zrodlo"),
+                        "pewnosc": t.get("pewnosc")})
     return out
