@@ -1,0 +1,18 @@
+# Odwołania2json: input/<sprawa>/*.pdf -> output/<sprawa>/<nazwa>.json (CPU, bez GPU)
+#   docker compose up --build
+services:
+  odwolania2json:
+    build: .
+    image: odwolania2json:latest
+    volumes:
+      - ./input:/app/input:ro
+      - ./output:/app/output
+      - ./trace:/app/trace
+      - ./models:/app/models
+    environment:
+      # liczba wątków CPU (domyślnie połowa rdzeni, najwyżej 6)
+      - O2J_THREADS
+      # opcjonalnie model serwowany przez API zgodne z OpenAI zamiast lokalnego pliku GGUF
+      - O2J_API_BASE
+      - O2J_API_MODEL
+      - O2J_API_KEY

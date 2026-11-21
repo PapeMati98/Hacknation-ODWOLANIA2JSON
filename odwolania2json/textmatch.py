@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from difflib import SequenceMatcher
 
 ID_LENGTHS = {"nip": (10,), "regon": (9, 14), "pesel": (11,), "nrb": (26,), "krs": (10,)}
 
@@ -19,13 +20,63 @@ def fold(s: str) -> str:
 
 
 def appears_in(value: str, text: str) -> bool:
+    """Czy wartość występuje w tekście dosłownie (z dokładnością do wielkości liter, spacji i cudzysłowów)."""
     v, t = fold(value), fold(text)
-    if v in t:
-        return True
-    if re.sub(r"\s", "", v) in re.sub(r"\s", "", t):
-        return True
-    words = [w for w in re.findall(r"\w+", v) if len(w) >= 3]
-    return bool(words) and sum(w in t for w in words) / len(words) >= 0.85
+    return v in t or re.sub(r"\s", "", v) in re.sub(r"\s", "", t)
+
+
+def words_in(value: str, text: str) -> bool:
+    """Czy wszystkie słowa wartości występują w tekście jako całe słowa (wartość złożona z kilku miejsc)."""
+    words = [w for w in re.findall(r"\w+", fold(value)) if len(w) >= 3]
+    have = set(re.findall(r"\w+", fold(text)))
+    return bool(words) and all(w in have for w in words)
+
+
+def person_in(value: str, text: str) -> bool:
+    """Imię i nazwisko: w tekście mogą być odmienione (Janowi Kowalskiemu), więc porównujemy tematy słów."""
+    words = re.findall(r"\w+", fold(value))
+    have = set(re.findall(r"\w+", fold(text)))
+
+    def ok(w: str) -> bool:
+        stem = w[: max(3, len(w) - 3)]
+        return w in have or any(x.startswith(stem) and abs(len(x) - len(w)) <= 4 for x in have)
+
+    return bool(words) and all(ok(w) for w in words)
+
+
+def snap_span(value: str, text: str, min_ratio: float = 0.85) -> str | None:
+    """Znajduje w tekście fragment najbardziej podobny do wartości (ta sama liczba słów +-1).
+
+    Model bywa niedokładny w przepisywaniu (zmieniona końcówka, literówka). Zamiast jego wersji
+    zwracamy dosłowny fragment dokumentu - o ile podobieństwo jest wysokie.
+    """
+    n = len(value.split())
+    target = fold(value)
+    if not n or len(target) < 4:
+        return None
+    tokens = [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
+    sm = SequenceMatcher(autojunk=False)
+    sm.set_seq2(target)
+    best_ratio, best = min_ratio, None
+    slack = 0.3 * len(target) + 2
+    for size in (n, n + 1, n - 1):
+        for i in range(len(tokens) - size + 1 if size > 0 else 0):
+            cand = text[tokens[i][0]: tokens[i + size - 1][1]]
+            folded = fold(cand)
+            if abs(len(folded) - len(target)) > slack:
+                continue
+            sm.set_seq1(folded)
+            if sm.real_quick_ratio() <= best_ratio or sm.quick_ratio() <= best_ratio:
+                continue
+            ratio = sm.ratio()
+            if ratio > best_ratio:
+                best_ratio, best = ratio, cand
+    if best is None:
+        return None
+    best = re.sub(r"\s+", " ", best).strip("„”\"'«»()[],;: ")
+    if not value.rstrip().endswith(".") and best.endswith(".") and not re.search(r"\.\w{1,3}\.$", best):
+        best = best[:-1]
+    return best or None
 
 
 def snap_text(value: str, text: str) -> str:
@@ -77,3 +128,18 @@ def _lcs(a: str, b: str) -> int:
                 best = max(best, cur[j])
         prev = cur
     return best
+
+
+def _compact(s: str) -> str:
+    return re.sub(r"[\s\-.,:/]", "", fold(s))
+
+
+def second_read(value: str, primary: str, alt: str) -> bool | None:
+    """Czy wartość z odczytu głównego występuje też w drugim, niezależnym odczycie OCR.
+
+    None - nie da się ocenić (wartości w tej postaci nie ma w odczycie głównym, np. model ją przepisał inaczej).
+    """
+    v = _compact(value)
+    if len(v) < 3 or v not in _compact(primary):
+        return None
+    return v in _compact(alt)

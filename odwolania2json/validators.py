@@ -200,6 +200,24 @@ def norm_text(raw) -> Check:
     return Check(s or None, "ok" if s else "brak")
 
 
+_TITLE = (r"(?:adw(?:okat\w*)?|r\.\s?pr|radc\w+\s+prawn\w+|mec(?:enas\w*)?|dr|mgr|inż|prof|hab|lic|"
+          r"pan(?:i|a|u|ią)?|p\.)\.?")
+
+
+def norm_person(raw) -> Check:
+    """Imię i nazwisko bez tytułów zawodowych i naukowych (adw., r. pr., mec., dr ...)."""
+    if raw in (None, ""):
+        return Check(None, "brak")
+    s = re.sub(r"\s+", " ", str(raw)).strip()
+    s = re.split(r"\s*[,;(]\s*|\s+[-–—]\s+", s)[0]        # "Jan Kowalski, radca prawny" -> "Jan Kowalski"
+    prev = None
+    while prev != s:
+        prev = s
+        s = re.sub(rf"^{_TITLE}\s+", "", s, flags=re.IGNORECASE)
+    s = s.strip(" .,;:")
+    return Check(s or None, "ok" if s else "brak")
+
+
 # Nazwa walidatora w YAML -> funkcja(raw, from_ocr) -> Check
 VALIDATORS = {
     "nip": lambda v, o: check_number("nip", v, o),
@@ -213,4 +231,5 @@ VALIDATORS = {
     "amount": lambda v, o: norm_amount(v),
     "email": lambda v, o: norm_email(v),
     "text": lambda v, o: norm_text(v),
+    "person": lambda v, o: norm_person(v),
 }

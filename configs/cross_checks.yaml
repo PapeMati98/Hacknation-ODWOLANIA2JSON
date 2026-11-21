@@ -1,0 +1,55 @@
+# Kontrole krzyżowe między dokumentami jednej sprawy oraz reguły zdroworozsądkowe.
+# Rozbieżność NIE zmienia plików JSON (nie wiadomo, który dokument ma rację) - trafia do
+# trace/<sprawa>/do_sprawdzenia.json jako pozycja do weryfikacji przez człowieka.
+#
+# Odwołanie do pola: <klasa>:<ścieżka>, listy oznaczane przez [].
+# Rodzaje reguł:
+#   same       - po obu stronach musi wystąpić co najmniej jedna zgodna wartość
+#                (numery: identyczne; teksty: zawieranie lub podobieństwo >= 80%),
+#   not_after  - lewa data nie może być późniejsza niż prawa,
+#   one_of     - wartość pola musi należeć do listy.
+# Reguła jest pomijana, gdy w sprawie brakuje dokumentu lub wartości po jednej ze stron.
+rules:
+  - id: odwolujacy-mocodawca-krs
+    desc: "KRS Odwołującego powinien zgadzać się z KRS mocodawcy z pełnomocnictwa."
+    kind: same
+    left: "odwolanie:Odwolujacy[].krs"
+    right: "pelnomocnictwo:mocodawca[].data.krs"
+
+  - id: odwolujacy-mocodawca-nip
+    desc: "NIP Odwołującego powinien zgadzać się z NIP mocodawcy z pełnomocnictwa."
+    kind: same
+    left: "odwolanie:Odwolujacy[].nip"
+    right: "pelnomocnictwo:mocodawca[].data.nip"
+
+  - id: odwolujacy-mocodawca-nazwa
+    desc: "Nazwa Odwołującego powinna zgadzać się z nazwą mocodawcy z pełnomocnictwa."
+    kind: same
+    left: "odwolanie:Odwolujacy[].nazwa"
+    right: "pelnomocnictwo:mocodawca[].data.nazwa"
+
+  - id: pelnomocnik-odwolanie-pelnomocnictwo
+    desc: "Pełnomocnik wskazany w odwołaniu powinien być wśród pełnomocników z pełnomocnictwa."
+    kind: same
+    left: "odwolanie:Odwolujacy[].pelnomocnik.imie_nazwisko"
+    right: "pelnomocnictwo:pelnomocnicy[].imie_nazwisko"
+
+  - id: czynnosc-przed-odwolaniem
+    desc: "Czynność Zamawiającego nie może być późniejsza niż data odwołania."
+    kind: not_after
+    left: "odwolanie:OdwolanieKIO.czynnosc_dzien"
+    right: "odwolanie:OdwolanieKIO.data"
+
+  - id: przelew-przed-odwolaniem
+    desc: "Wpis powinien być opłacony najpóźniej w dniu wniesienia odwołania."
+    kind: not_after
+    left: "przelew:przelew_bankowy.data_operacji"
+    right: "odwolanie:OdwolanieKIO.data"
+
+  # Wyłączone: w danych przykładowych organizatora kwoty są dowolne (50 zł, 200 zł), więc reguła
+  # dawała fałszywe alarmy w 47 z 60 spraw. Do włączenia dla rzeczywistych spraw.
+  # - id: przelew-kwota-wpisu
+  #   desc: "Kwota inna niż ustawowy wpis od odwołania (7 500 / 10 000 / 15 000 / 20 000 zł) lub opłata skarbowa (17 zł)."
+  #   kind: one_of
+  #   field: "przelew:przelew_bankowy.kwota"
+  #   values: [17, 7500, 10000, 15000, 20000]

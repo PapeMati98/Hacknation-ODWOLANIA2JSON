@@ -21,7 +21,7 @@ output:
     - data:
         imie_nazwisko:
           type: string
-          validator: text
+          validator: person
           verify_in_text: true
           desc: "Imię i nazwisko mocodawcy tylko gdy jest osobą fizyczną; dla firmy/spółki null."
         krs:
@@ -44,13 +44,13 @@ output:
       podpisujacy:
         - imie_nazwisko:
             type: string
-            validator: text
+            validator: person
             verify_in_text: true
             desc: "Imię i nazwisko osoby podpisującej pełnomocnictwo w imieniu mocodawcy (np. członek zarządu, prezes)."
   pelnomocnicy:
     - imie_nazwisko:
         type: string
-        validator: text
+        validator: person
         verify_in_text: true
         desc: "Imię i nazwisko osoby otrzymującej pełnomocnictwo, w mianowniku."
       pesel:

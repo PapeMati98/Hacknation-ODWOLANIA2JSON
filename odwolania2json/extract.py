@@ -14,8 +14,10 @@ import re
 from dataclasses import dataclass, field
 
 from .config import DocClass, Section, is_leaf
-from .pdfio import UNREADABLE, Document
-from .textmatch import ID_LENGTHS, appears_in, digits_in_text, fold, snap_digits, snap_text
+from .crosscheck import resolve_duplicates
+from .pdfio import ALT_DPIS, UNREADABLE, Document
+from .textmatch import (ID_LENGTHS, appears_in, digits_in_text, fold, person_in, second_read, snap_digits, snap_span,
+                        snap_text, words_in)
 from .validators import VALIDATORS
 
 SYSTEM_PROMPT = (
@@ -71,16 +73,24 @@ class Extractor:
     def __init__(self, backend):
         self.backend = backend
 
-    def build_prompt(self, doc: Document, cls: DocClass) -> str:
-        # Część stała dla klasy jest na początku (cache prefiksu w llama.cpp), tekst dokumentu na końcu.
+    def static_prompt(self, cls: DocClass) -> str:
+        # Część stała dla klasy: jej stan w modelu jest zapamiętywany i używany dla kolejnych dokumentów.
         return (f"Typ dokumentu: {cls.description}\n\n{RULES}\n\nOpis pól:\n{cls.field_guide()}\n\n"
-                f"Formularz do wypełnienia:\n{cls.template()}\n\nTEKST DOKUMENTU:\n{doc.text(max_pages=cls.pages)}")
+                f"Formularz do wypełnienia:\n{cls.template()}\n\nTEKST DOKUMENTU:\n")
+
+    def build_prompt(self, doc: Document, cls: DocClass) -> str:
+        return self.static_prompt(cls) + doc.text(max_pages=cls.pages)
 
     def run(self, doc: Document, cls: DocClass) -> tuple[dict, list[dict], str]:
-        answer = self.backend.complete(SYSTEM_PROMPT, self.build_prompt(doc, cls), cls.first_header() + "\n", 600)
+        if hasattr(self.backend, "fill"):       # model lokalny: prowadzone wypełnianie formularza
+            sections = [(s.name, s.is_list, [f.key for f in s.fields]) for s in cls.sections()]
+            answer = self.backend.fill(SYSTEM_PROMPT, self.static_prompt(cls), doc.text(max_pages=cls.pages), sections)
+        else:
+            answer = self.backend.complete(SYSTEM_PROMPT, self.build_prompt(doc, cls), cls.first_header() + "\n", 600)
         raw = parse_sheet(answer, cls)
         trace: list[dict] = []
         data = postprocess(cls.output, raw, doc, trace, "")
+        resolve_duplicates(cls, data, trace, doc.text(max_pages=None))
         apply_derived(cls, cls.output, data, data)
         return data, trace, answer
 
@@ -91,6 +101,7 @@ def parse_sheet(answer: str, cls: DocClass) -> dict:
     raw: dict = {}
     current: Section | None = None
     target: dict | None = None
+    seen: set[str] = set()
     for line in answer.splitlines():
         line = line.strip().strip("`")
         head = re.match(r"^#+\s*([\w\-]+)(?:\s+(\d+))?", line)
@@ -103,6 +114,7 @@ def parse_sheet(answer: str, cls: DocClass) -> dict:
                 raw.setdefault(current.name, []).append(target)
             else:
                 target = raw if current.name == "_" else raw.setdefault(current.name, {})
+            seen = set()
             continue
         kv = re.match(r"^[-*]?\s*([\w.\-]+)\s*:\s*(.*)$", line)
         if not kv or current is None or target is None:
@@ -110,6 +122,10 @@ def parse_sheet(answer: str, cls: DocClass) -> dict:
         spec = next((f for f in current.fields if f.key.casefold() == kv.group(1).casefold()), None)
         if spec is None:
             continue
+        if spec.key in seen and current.is_list:    # powtórzony klucz bez nagłówka = kolejny element listy
+            target, seen = {}, set()
+            raw[current.name].append(target)
+        seen.add(spec.key)
         value = kv.group(2).strip()
         if value.casefold() in EMPTY:
             value = None
@@ -200,15 +216,68 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
             elif wrong_len:
                 result, status, note = None, "nieczytelne", note or "zła długość numeru"
     elif spec.get("verify_in_text") and result is not None:
-        snapped = snap_text(str(result), text)
-        if snapped != result:
-            result, status, note = snapped, "dopasowano", "uzupełniono ucięte słowo z tekstu"
-        if not appears_in(str(result), text):
-            result, status, note = None, "niezweryfikowane", "wartości nie ma w tekście dokumentu"
+        result, status, note = verify_text(str(result), text, kind, status, note)
+
+    # Kontrola krzyżowa skanu: wartość musi wyjść tak samo z dwóch niezależnych odczytów OCR.
+    # Numery z poprawną sumą kontrolną są już potwierdzone inaczej; nazwisk i długich tekstów nie
+    # porównujemy znak po znaku (różnice w znakach diakrytycznych nie zmieniają znaczenia).
+    if result is not None and from_ocr and needs_second_read(kind, value, status):
+        probe = str(result) if kind in ID_LENGTHS else value
+        agreed = ocr_confirms(doc, probe, text)
+        if agreed is False:
+            result, status, note = None, "nieczytelne", "niezależne odczyty OCR dają różne wartości"
+        elif agreed and not note:
+            note = "potwierdzone drugim odczytem OCR"
 
     if result is not None and spec.get("output_type") == "integer":
         result = int(result)
     return done(result, status, note)
+
+
+CHECKSUM_KINDS = {"nip", "regon", "pesel", "nrb"}
+
+
+def ocr_confirms(doc: Document, probe: str, text: str) -> bool | None:
+    """Czy wartość z odczytu głównego potwierdza inny, niezależny odczyt OCR (2 z 3 odczytów).
+
+    None - nie da się ocenić (wartości w tej postaci nie ma w odczycie głównym).
+    Trzeci odczyt jest wykonywany dopiero wtedy, gdy drugi nie potwierdził wartości.
+    """
+    agreed = None
+    for dpi in ALT_DPIS:
+        agreed = second_read(probe, text, doc.alt_text(dpi))
+        if agreed is not False:
+            break
+    return agreed
+
+
+def needs_second_read(kind: str, value: str, status: str) -> bool:
+    if kind == "person":
+        return False
+    if kind in CHECKSUM_KINDS:
+        return status != "ok"                  # poprawna suma kontrolna wystarcza
+    if kind == "text":
+        return len(value) <= 40 and sum(ch.isdigit() for ch in value) >= 2    # sygnatury, numery
+    return True                                # krs, daty, kwoty, numery ogłoszeń
+
+
+def verify_text(value: str, text: str, kind: str, status: str, note: str):
+    """Sprawdza wartość tekstową w dokumencie; w razie potrzeby zastępuje ją dosłownym fragmentem tekstu."""
+    if kind == "person":       # nazwisko w dokumencie bywa odmienione, a wynik ma być w mianowniku
+        if appears_in(value, text) or person_in(value, text):
+            return value, status, note
+        return None, "niezweryfikowane", "osoby nie ma w tekście dokumentu"
+    snapped = snap_text(value, text)
+    if snapped != value and appears_in(snapped, text):
+        return snapped, "dopasowano", "uzupełniono ucięte słowo z tekstu"
+    if appears_in(value, text):
+        return value, status, note
+    span = snap_span(value, text)
+    if span:
+        return span, "dopasowano", f"{value!r} -> dosłowny fragment dokumentu"
+    if words_in(value, text):
+        return value, status, "słowa wartości występują w dokumencie w kilku miejscach"
+    return None, "niezweryfikowane", "wartości nie ma w tekście dokumentu"
 
 
 def apply_derived(cls: DocClass, spec, node, root):

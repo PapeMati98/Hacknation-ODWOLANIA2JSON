@@ -6,7 +6,7 @@ Rozwiązanie zadania **Odwołania2json** (Urząd Zamówień Publicznych, HackNat
 - Obsługuje PDF-y z warstwą tekstową i **skany** (OCR).
 - Dokument spoza obsługiwanych klas (np. ogłoszenie TED) jest pomijany — nie powstaje dla niego JSON.
 - Nową klasę dokumentu dodaje się **jednym plikiem YAML, bez zmian w kodzie**.
-- Każda wartość jest weryfikowana; wartość niepewna trafia do wyniku jako `null` i jest oznaczana w śladzie ekstrakcji. Zasada projektu: *lepiej oznaczyć pole jako nieodczytane, niż wpisać błędną wartość*.
+- Każda wartość jest weryfikowana, także krzyżowo (dwa niezależne odczyty skanu, zgodność między dokumentami sprawy). Wartość niepewna trafia do wyniku jako `null`, a razem z proponowanym odczytem i powodem — na listę `do_sprawdzenia.json` dla człowieka. Zasada projektu: *lepiej przekazać pole do sprawdzenia, niż wpisać błędną wartość*.
 
 ## Uruchomienie
 
@@ -27,6 +27,14 @@ python -m venv .venv
 .venv/Scripts/python -m odwolania2json
 ```
 
+Docker (Linux / Windows / macOS):
+
+```bash
+docker compose up --build
+```
+
+Kontener czyta `./input`, zapisuje do `./output` i `./trace`, a model trzyma w `./models` (brakujący pobiera przy pierwszym starcie). Modele OCR są w obrazie.
+
 ### Wejście i wyjście
 
 ```
@@ -37,7 +45,10 @@ input/                          output/
 │   └── przelew_nr_1.pdf        │   └── przelew_nr_1.json
 ```
 
-Plik JSON ma tę samą nazwę co PDF i leży w podfolderze tej samej sprawy. Obok powstaje folder `trace/` ze śladem ekstrakcji każdego dokumentu.
+Plik JSON ma tę samą nazwę co PDF i leży w podfolderze tej samej sprawy. Obok powstaje folder `trace/`:
+
+- `trace/<sprawa>/<plik>.trace.json` — ślad ekstrakcji dokumentu (klasa, odpowiedź modelu, źródło i status każdego pola),
+- `trace/<sprawa>/do_sprawdzenia.json` — lista dla człowieka: pola odrzucone przez weryfikację (z proponowaną wartością i powodem) oraz rozbieżności między dokumentami sprawy.
 
 ### Parametry
 
@@ -46,29 +57,43 @@ Plik JSON ma tę samą nazwę co PDF i leży w podfolderze tej samej sprawy. Obo
 | `--input`, `--output`, `--trace` | foldery robocze | `input`, `output`, `trace` |
 | `--classes` | folder z klasami dokumentów | `configs/classes` |
 | `--model` / `O2J_MODEL` | plik GGUF modelu lokalnego | `models/Qwen3.5-4B-Q4_K_M.gguf` |
-| `--threads` / `O2J_THREADS` | liczba wątków CPU | 8 |
+| `--cross-checks` | reguły kontroli krzyżowej między dokumentami sprawy | `configs/cross_checks.yaml` |
+| `--threads` / `O2J_THREADS` | liczba wątków CPU | połowa rdzeni, najwyżej 6 |
 | `O2J_API_BASE`, `O2J_API_MODEL`, `O2J_API_KEY` | model serwowany przez API zgodne z OpenAI (zamiast lokalnego) | — |
 
 ## Architektura
 
 ```
-PDF ──► pdfio ──► classify ──► extract (LLM) ──► walidacja i dopasowanie do tekstu ──► JSON
-         │           │              │                        │                          + trace
-   tekst lub OCR   klasy YAML   formularz z YAML     validators + textmatch
+PDF ──► pdfio ──► classify ──► extract (LLM) ──► walidacja pól ──► kontrola krzyżowa ──► JSON
+         │           │              │                 │                   │              + trace
+   tekst lub OCR   klasy YAML   formularz z YAML   validators        crosscheck         + do_sprawdzenia
+   (dwa odczyty)                                  + textmatch    + cross_checks.yaml
 ```
 
 | Moduł | Rola |
 |---|---|
-| `odwolania2json/pdfio.py` | Warstwa tekstowa PDF; gdy jej brak — OCR na CPU (RapidOCR, modele PP-OCR przez ONNX Runtime). OCR jest wieloskalowy: linie o niskiej pewności są czytane ponownie w innej rozdzielczości, a te, które nadal są niepewne, dostają znacznik `[NIECZYTELNE]`. |
+| `odwolania2json/pdfio.py` | Warstwa tekstowa PDF; gdy jej brak — OCR na CPU (RapidOCR, modele PP-OCR przez ONNX Runtime). Każda strona skanu jest czytana dwa razy w różnej rozdzielczości: linie o niskiej pewności są zastępowane lepszym odczytem albo dostają znacznik `[NIECZYTELNE]`, a drugi odczyt służy do kontroli krzyżowej wartości. |
 | `odwolania2json/config.py` | Wczytuje klasy dokumentów z YAML; buduje z nich formularz i opis pól dla modelu. |
-| `odwolania2json/extract.py` | Klasyfikacja (słowa kluczowe i tytuł z YAML, próg odrzucenia) oraz ekstrakcja: model wypełnia zwięzły formularz `klucz: wartość`, kod zamienia go na JSON. |
+| `odwolania2json/extract.py` | Klasyfikacja (słowa kluczowe i tytuł z YAML, próg odrzucenia) oraz ekstrakcja: model wypełnia zwięzły formularz `klucz: wartość`, kod zamienia go na JSON i weryfikuje każde pole. |
 | `odwolania2json/llm.py` | Model językowy: lokalnie przez llama.cpp (Qwen3.5-4B, Apache-2.0) albo przez API zgodne z OpenAI. |
-| `odwolania2json/validators.py` | Sumy kontrolne NIP / REGON / PESEL / NRB, format KRS, daty, numery BZP i TED, kwoty, e-mail; naprawa typowych pomyłek OCR o jeden znak. |
-| `odwolania2json/textmatch.py` | Sprawdza, czy wartość faktycznie występuje w dokumencie; dociąga ucięte słowa i niepełne numery do tego, co jest w tekście. |
-| `odwolania2json/cli.py` | Przetwarzanie folderu `input`; dokumenty są grupowane klasami, żeby stała część promptu zostawała w pamięci podręcznej modelu. |
+| `odwolania2json/validators.py` | Sumy kontrolne NIP / REGON / PESEL / NRB, format KRS, daty, numery BZP i TED, kwoty, e-mail, nazwiska bez tytułów; naprawa typowych pomyłek OCR o jeden znak. |
+| `odwolania2json/textmatch.py` | Sprawdza, czy wartość faktycznie występuje w dokumencie; zastępuje niedokładnie przepisaną wartość dosłownym fragmentem tekstu, dociąga niepełne numery, porównuje dwa odczyty OCR. |
+| `odwolania2json/crosscheck.py` | Kontrola krzyżowa: ten sam numer w kilku polach, zgodność między dokumentami sprawy, lista pozycji do sprawdzenia. |
+| `odwolania2json/cli.py` | Przetwarzanie folderu `input`; dokumenty są grupowane klasami, żeby model czytał stałą część promptu tylko raz na klasę. |
 
 ### Dlaczego formularz, a nie JSON prosto z modelu
 Na CPU czas zależy głównie od liczby generowanych tokenów. Formularz `klucz: wartość` jest około dwa razy krótszy niż JSON z tymi samymi danymi, a strukturę JSON (zagnieżdżenia, typy, pola wyliczane ze słowników) deterministycznie odtwarza kod.
+
+Model lokalny wypełnia formularz w sposób prowadzony: klucze podaje mu kod (szybkie przetwarzanie wsadowe), a model generuje wyłącznie wartości. Stan modelu po przeczytaniu instrukcji i opisu pól danej klasy jest zapamiętywany, więc dla kolejnych dokumentów tej klasy czytany jest już tylko tekst dokumentu. Lista podmiotów kończy się, gdy model przestaje podawać nowe — powtórzenie już wpisanego podmiotu jest odrzucane.
+
+### Kontrola krzyżowa
+Sprawdzenie pojedynczego pola nie wystarcza: KRS, daty, kwoty i numery ogłoszeń nie mają sumy kontrolnej, a poprawny numer może trafić do niewłaściwego podmiotu. Dlatego wynik przechodzi trzy dodatkowe kontrole:
+
+1. **Dwa niezależne odczyty skanu.** Wartość z OCR bez sumy kontrolnej (KRS, data, kwota, numer BZP/TED, sygnatura, numer transakcji) musi wyjść identycznie z dwóch odczytów w różnej rozdzielczości. Rozbieżność → `null` i pozycja na liście do sprawdzenia.
+2. **Kontrola przypisania.** Ten sam NIP / KRS / REGON / rachunek nie może trafić do kilku pól. Numer zostaje przy tym podmiocie, przy którego nazwie leży w dokumencie; gdy nie da się tego ustalić — znika ze wszystkich pól.
+3. **Zgodność między dokumentami sprawy** (`configs/cross_checks.yaml`): Odwołujący z odwołania ↔ mocodawca z pełnomocnictwa (KRS, NIP, nazwa), pełnomocnik z odwołania ↔ pełnomocnicy z pełnomocnictwa, kolejność dat. Rozbieżność jest zgłaszana, ale nie zmienia JSON-ów — nie wiadomo, który dokument ma rację. Na 60 przykładowych sprawach organizatora reguły nie dają ani jednego fałszywego alarmu.
+
+Reguły między dokumentami dopisuje się w YAML, bez zmian w kodzie (rodzaje: `same`, `not_after`, `one_of`).
 
 ### Weryfikacja wartości
 Dla każdego pola w `trace/<sprawa>/<plik>.trace.json` zapisywane są: wartość surowa z modelu, wartość końcowa, źródło (`warstwa_tekstowa` / `ocr`) oraz status:
@@ -77,10 +102,10 @@ Dla każdego pola w `trace/<sprawa>/<plik>.trace.json` zapisywane są: wartość
 |---|---|
 | `ok` | wartość przeszła walidację |
 | `naprawiono` | błąd OCR jednego znaku poprawiony na podstawie sumy kontrolnej |
-| `dopasowano` | wartość modelu uzupełniona do pełnej postaci z tekstu dokumentu |
-| `ostrzezenie` | odczyt dokładny (warstwa tekstowa), ale np. zła suma kontrolna — wartość zachowana |
-| `nieczytelne` | wartość z OCR nie przechodzi walidacji i nie da się jej jednoznacznie naprawić → `null` |
-| `niezweryfikowane` | wartości nie ma w tekście dokumentu → `null` |
+| `dopasowano` | wartość modelu zastąpiona dosłownym fragmentem dokumentu (ucięte słowo, zmieniona końcówka, niepełny numer) |
+| `ostrzezenie` | odczyt dokładny (warstwa tekstowa), ale np. zła suma kontrolna — wartość zachowana, pozycja na liście do sprawdzenia |
+| `nieczytelne` | wartość z OCR nie przechodzi walidacji i nie da się jej jednoznacznie naprawić albo dwa odczyty OCR się różnią → `null` |
+| `niezweryfikowane` | wartości nie ma w tekście dokumentu albo numer przypisano do kilku pól → `null` |
 | `brak` | informacji nie ma w dokumencie |
 
 ## Jak dodać nową klasę dokumentu
@@ -133,7 +158,7 @@ output:                        # struktura wynikowego JSON
         desc: "NIP strony."
 ```
 
-Dostępne walidatory: `text`, `date`, `amount`, `email`, `nip`, `regon`, `pesel`, `krs`, `nrb`, `bzp`, `ted`.
+Dostępne walidatory: `text`, `person` (imię i nazwisko bez tytułów), `date`, `amount`, `email`, `nip`, `regon`, `pesel`, `krs`, `nrb`, `bzp`, `ted`.
 Opcje pola: `verify_in_text`, `enum`, `enum_from`, `derive`, `only_if_multiple` (pole wypełniane tylko, gdy lista ma kilka elementów), `output_type: integer`.
 Podpowiedzi do pozycji słownika (jak dana pozycja bywa opisana w dokumentach) wpisuje się w sekcji `hints`.
 
@@ -149,7 +174,7 @@ python tools/score.py --manifest eval/manifest.json --pred eval/out --split dev
 - `tools/score.py` — F1 według definicji organizatora (błędna wartość = FP, brak = FN, długie teksty z progiem 80%, elementy list dopasowywane po treści).
 - `tools/make_scandev.py` — zamienia tekstowe PDF-y w „skany” (render, obrót, szum, JPEG) do testu ścieżki OCR.
 - `tools/check_classify.py` — macierz pomyłek klasyfikatora, `tools/bench_ocr.py` — czas i dokładność OCR, `tools/diff_pred.py` — różnice pole po polu.
-- `tests/` — testy jednostkowe walidatorów (`python -m pytest tests`).
+- `tests/` — testy jednostkowe walidatorów, dopasowania do tekstu i kontroli krzyżowej (`python -m pytest tests`).
 
 ## Użyte komponenty zewnętrzne
 

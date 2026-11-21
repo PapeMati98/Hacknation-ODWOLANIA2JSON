@@ -90,7 +90,7 @@ output:
       pelnomocnik:
         imie_nazwisko:
           type: string
-          validator: text
+          validator: person
           verify_in_text: true
           desc: "Imię i nazwisko pełnomocnika Odwołującego."
         nazwa:

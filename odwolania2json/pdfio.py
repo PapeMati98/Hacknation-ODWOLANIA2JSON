@@ -6,7 +6,10 @@ OCR (RapidOCR / PP-OCR ONNX, CPU):
      alternatywnych; dla każdej linii wybierany jest odczyt o najwyższej pewności
      (dopasowanie linii po pozycji w pionie),
   3. linie, które nadal mają niską pewność, są oznaczane jako nieczytelne i nie trafiają
-     do tekstu przekazywanego modelowi jako fakt (zastępuje je znacznik [NIECZYTELNE]).
+     do tekstu przekazywanego modelowi jako fakt (zastępuje je znacznik [NIECZYTELNE]),
+  4. pierwszy odczyt alternatywny jest wykonywany zawsze i zapamiętywany w całości: to drugi,
+     niezależny odczyt strony używany do kontroli krzyżowej wartości (extract.ocr_confirms);
+     trzeci odczyt (kolejna rozdzielczość) jest robiony tylko wtedy, gdy dwa pierwsze się różnią.
 """
 from __future__ import annotations
 
@@ -48,6 +51,7 @@ class Page:
     text: str
     lines: list[Line] = field(default_factory=list)
     unreadable: int = 0
+    alt_reads: dict[int, str] = field(default_factory=dict)   # DPI -> pełny tekst odczytu alternatywnego
 
 
 @dataclass
@@ -62,6 +66,19 @@ class Document:
     def text(self, max_pages: int | None = None) -> str:
         pages = self.pages if max_pages is None else self.pages[:max_pages]
         return "\n\n".join(f"--- strona {p.number} ---\n{p.text}" for p in pages)
+
+    def alt_text(self, dpi: int = ALT_DPIS[0]) -> str:
+        """Niezależny odczyt OCR stron-skanów w podanej rozdzielczości (brakujący jest wykonywany na żądanie)."""
+        missing = [p for p in self.pages if p.source == "ocr" and dpi not in p.alt_reads]
+        if missing:
+            pdf = pdfium.PdfDocument(self.path)
+            for p in missing:
+                p.alt_reads[dpi] = _lines_text(_ocr_lines(_render(pdf[p.number - 1], dpi)))
+        return "\n".join(p.alt_reads[dpi] for p in self.pages if p.source == "ocr")
+
+
+def _lines_text(lines: list[Line]) -> str:
+    return "\n".join(l.text for l in sorted(lines, key=lambda l: l.y))
 
 
 def _ocr_lines(img: np.ndarray) -> list[Line]:
@@ -78,12 +95,13 @@ def _render(page, dpi: int) -> np.ndarray:
     return np.array(page.render(scale=dpi / 72).to_pil().convert("RGB"))
 
 
-def ocr_page(page) -> list[Line]:
+def ocr_page(page) -> tuple[list[Line], dict[int, str]]:
+    """Zwraca (linie odczytu głównego po scaleniu skal, pełne teksty odczytów alternatywnych wg DPI)."""
     lines = _ocr_lines(_render(page, BASE_DPI))
-    if all(l.conf >= LOW_CONF for l in lines):
-        return lines
+    reads: dict[int, str] = {}
     for dpi in ALT_DPIS:
         alt = _ocr_lines(_render(page, dpi))
+        reads[dpi] = _lines_text(alt)
         for i, line in enumerate(lines):
             if line.conf >= LOW_CONF:
                 continue
@@ -93,7 +111,7 @@ def ocr_page(page) -> list[Line]:
                 lines[i] = best
         if all(l.conf >= LOW_CONF for l in lines):
             break
-    return lines
+    return lines, reads
 
 
 def load(path: str, max_pages: int | None = None) -> Document:
@@ -106,8 +124,8 @@ def load(path: str, max_pages: int | None = None) -> Document:
         if len(text) >= MIN_TEXT_CHARS:
             pages.append(Page(i + 1, "text", text))
             continue
-        lines = ocr_page(pg)
+        lines, reads = ocr_page(pg)
         bad = sum(1 for l in lines if l.conf < LOW_CONF)
         body = "\n".join(l.text if l.conf >= LOW_CONF else UNREADABLE for l in sorted(lines, key=lambda l: l.y))
-        pages.append(Page(i + 1, "ocr", body, lines, bad))
+        pages.append(Page(i + 1, "ocr", body, lines, bad, reads))
     return Document(path, pages)

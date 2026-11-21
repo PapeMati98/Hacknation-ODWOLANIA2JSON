@@ -9,3 +9,4 @@ output/*
 input/*
 !input/.gitkeep
 .env
+trace/
