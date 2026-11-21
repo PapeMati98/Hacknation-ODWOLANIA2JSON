@@ -4,7 +4,7 @@
 
 ## Dostęp do modelu
 
-Po uruchomieniu usługi zespół przekaże jury osobnym kanałem adres firmowej usługi, identyfikator obsługiwanego modelu i klucz do testów. W PowerShell, w katalogu zawierającym `start_ui.bat` i `requirements.txt`, ustaw przekazane wartości. Pole klucza ukrywa wpisywane znaki. Ustawienia dotyczą bieżącej konsoli i uruchamianych z niej procesów.
+Po uruchomieniu usługi zespół przekaże jury adres firmowej usługi i identyfikator modelu. Klucz do testów jury otrzyma w formularzu zgłoszeniowym. W PowerShell, w katalogu zawierającym `start_ui.bat` i `requirements.txt`, ustaw przekazane wartości. Pole klucza ukrywa wpisywane znaki. Ustawienia dotyczą bieżącej konsoli i uruchamianych z niej procesów.
 
 ```powershell
 $env:O2J_API_BASE = Read-Host 'Adres usługi LLM przekazany przez zespół, łącznie z /v1'
@@ -12,7 +12,7 @@ $env:O2J_API_MODEL = Read-Host 'Identyfikator modelu podany przez zespół'
 $env:O2J_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'Klucz jury' -AsSecureString)).Password
 ```
 
-Jeżeli zespół przekazał osobny adres OCR, ustaw również `O2J_OCR_BASE` i ewentualny osobny `O2J_OCR_KEY`. Bez adresu usługi OCR skany są odczytywane lokalnie. Tryb zdalnego OCR wysyła do tej usługi dokument PDF i numery stron do odczytu.
+W konfiguracji konkursowej OCR działa na komputerze oceniającego. Pozostaw `O2J_OCR_BASE` nieustawione. Plik PDF i obrazy stron pozostają na tym komputerze. Do API Synapsa trafiają tekst oraz pola potrzebne do odczytu wartości. Przed oceną zespół przekaże adres obowiązującej polityki dostawcy. [Projekt polityki dla API Synaps](./POLITYKA-PRYWATNOSCI-API-SYNAPS.md)
 
 ## Pierwsza próba
 
