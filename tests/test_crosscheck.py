@@ -574,12 +574,8 @@ def test_api_env(tmp_path, monkeypatch):
     import os
     from odwolania2json import load_api_env
     path = tmp_path / "api.env"
-    path.write_text("# usługa modelu
-O2J_API_BASE=https://przyklad.test/v1
-O2J_API_MODEL = 'model-a'
-INNA=1
-O2J_API_KEY=z-pliku
-", encoding="utf-8")
+    lines = ["# usługa modelu", "O2J_API_BASE=https://przyklad.test/v1", "O2J_API_MODEL = 'model-a'", "INNA=1", "O2J_API_KEY=z-pliku"]
+    path.write_text(chr(10).join(lines), encoding="utf-8")
     for name in ("O2J_API_BASE", "O2J_API_MODEL"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("O2J_API_KEY", "ze-srodowiska")
