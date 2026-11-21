@@ -20,7 +20,7 @@ Z PDF pobieramy tekst, a w przypadku skanów korzystamy z OCR i porównujemy odc
 
 ### Dotychczasowe postępy
 
-Działają trzy klasy dokumentów UZP. Na 30 publicznych skanach treningowych organizatora, po 10 z każdej klasy, uzyskaliśmy F1 0,9752. Przy wymaganiu dokładnej zgodności wartości F1 wyniósł 0,9580. Interfejs pozwala pobrać JSON dokumentu i ZIP całej sprawy. W osobnej próbie dodaliśmy czwartą klasę przez YAML i poprawnie odczytaliśmy dwa pola protokołu przekazania: jego numer i datę. Jury oceni prototyp na oddzielnym, ukrytym zbiorze spraw.
+Działają trzy klasy dokumentów UZP. Na 30 publicznych skanach treningowych organizatora, po 10 z każdej klasy, uzyskaliśmy F1 0,9902. Przy wymaganiu dokładnej zgodności wartości F1 wyniósł 0,9735. Interfejs pozwala pobrać JSON dokumentu i ZIP całej sprawy. W osobnej próbie dodaliśmy czwartą klasę przez YAML i poprawnie odczytaliśmy numer oraz datę protokołu przekazania. Jury oceni prototyp na oddzielnym, ukrytym zbiorze spraw.
 
 ### Przy zapisie projektu
 
