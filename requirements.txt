@@ -1,0 +1,11 @@
+rapidocr>=3.4
+onnxruntime>=1.20
+opencv-python-headless>=4.10
+pypdfium2>=4.30
+pyyaml>=6.0
+jsonschema>=4.23
+numpy>=2.0
+pillow>=11.0
+huggingface_hub>=0.30
+# llama.cpp (CPU); gotowe koła: --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python>=0.3.36

@@ -118,11 +118,14 @@ def main() -> int:
     ap.add_argument("--lenient", action="store_true", help="porównanie tekstu bez wielkości liter i nadmiarowych spacji")
     ap.add_argument("--report", type=Path, help="zapisz pełny raport JSON")
     ap.add_argument("--worst", type=int, default=12, help="ile najsłabszych pól wypisać")
+    ap.add_argument("--only-present", action="store_true", help="oceniaj tylko sprawy obecne w katalogu wyników")
     args = ap.parse_args()
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     if args.split:
         manifest = [m for m in manifest if m.get("split") == args.split]
+    if args.only_present:
+        manifest = [m for m in manifest if (args.pred / m["case"]).is_dir()]
     if not manifest:
         print("Pusty manifest po filtrze.", file=sys.stderr)
         return 2
