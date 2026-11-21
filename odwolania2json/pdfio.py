@@ -52,10 +52,11 @@ OCR_CUDA = False                     # silnik OCR na karcie graficznej (usługa 
 def _engine():
     global _ENGINE
     if _ENGINE is None:
+        # Biblioteka sama ustawia swój dziennik na INFO (przy imporcie i przy tworzeniu silnika), więc zmiana
+        # poziomu nie wystarcza: filtr przepuszcza tylko błędy, żeby komunikaty o plikach modeli nie zasłaniały
+        # postępu przetwarzania.
+        logging.getLogger("RapidOCR").addFilter(lambda record: record.levelno >= logging.ERROR)
         from rapidocr import RapidOCR
-        # Biblioteka przy imporcie ustawia swój dziennik na INFO - wyciszamy po imporcie, żeby komunikaty
-        # o plikach modeli nie zasłaniały postępu przetwarzania.
-        logging.getLogger("RapidOCR").setLevel(logging.ERROR)
         # Kilka procesów czytających równolegle po jednym-dwóch wątkach daje większą przepustowość niż jeden
         # proces na wszystkich rdzeniach (rozpoznawanie krótkich linii słabo skaluje się z liczbą wątków).
         params: dict = {}
