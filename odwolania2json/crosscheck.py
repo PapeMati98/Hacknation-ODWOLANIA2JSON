@@ -103,6 +103,55 @@ def resolve_duplicates(cls: DocClass, data: dict, trace: list[dict], text: str) 
                                    + (f"; w dokumencie leży przy polu {keep}" if keep else "; nie da się ustalić właściwego"))
 
 
+def apply_field_rules(cls: DocClass, data: dict, trace: list[dict]) -> None:
+    """Reguły zależności między polami jednego dokumentu, zapisane w YAML klasy:
+
+    requires: <pole obok>  - pole ma sens tylko razem z innym (np. miejscowość z nagłówka tylko z datą),
+    not_in: <ścieżka>      - wartość nie może powtarzać wartości z innej listy (np. podpisujący
+                             pełnomocnictwo nie może być jednocześnie pełnomocnikiem).
+    Pole łamiące regułę dostaje null i trafia na listę do sprawdzenia.
+    """
+    by_path = {t["pole"]: t for t in trace}
+
+    def reject(path, parent, key, reason):
+        parent[key] = None
+        if path in by_path:
+            by_path[path].update(wartosc=None, status="niezweryfikowane", uwaga=reason)
+
+    for path, parent, key, spec in list(walk(cls.output, data)):
+        value = parent.get(key)
+        if value is None:
+            continue
+        need = spec.get("requires")
+        if need and parent.get(need) is None:
+            reject(path, parent, key, f"pole ma sens tylko razem z polem {need}, którego w dokumencie nie ma")
+            continue
+        other = spec.get("not_in")
+        if other and any(fold(str(value)) == fold(str(v)) for v in get_values(data, other)):
+            reject(path, parent, key, f"ta sama wartość występuje w {other}")
+    _prune(cls.output, data)
+
+
+def _empty(node) -> bool:
+    if isinstance(node, dict):
+        return all(_empty(v) for v in node.values())
+    if isinstance(node, list):
+        return all(_empty(v) for v in node)
+    return node is None
+
+
+def _prune(spec, node) -> None:
+    """Usuwa z list elementy bez żadnej wartości (zostawia jeden, gdy lista byłaby pusta)."""
+    if isinstance(spec, list) and isinstance(node, list):
+        for item in node:
+            _prune(spec[0], item)
+        kept = [item for item in node if not _empty(item)]
+        node[:] = kept or node[:1]
+    elif isinstance(spec, dict) and not is_leaf(spec) and isinstance(node, dict):
+        for key, sub in spec.items():
+            _prune(sub, node.get(key))
+
+
 # ---------------------------------------------------------------- 3. reguły między dokumentami
 def load_rules(path: Path) -> list[dict]:
     if not path.is_file():

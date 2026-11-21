@@ -196,7 +196,8 @@ def norm_email(raw) -> Check:
 def norm_text(raw) -> Check:
     if raw in (None, ""):
         return Check(None, "brak")
-    s = re.sub(r"\s+", " ", str(raw)).strip().strip(",;")
+    s = re.sub(r'["„”“«»]', " ", str(raw))          # cudzysłowy wokół nazw nie są częścią wartości
+    s = re.sub(r"\s+", " ", s).strip().strip(",;")
     return Check(s or None, "ok" if s else "brak")
 
 

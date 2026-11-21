@@ -44,6 +44,7 @@ output:
       podpisujacy:
         - imie_nazwisko:
             type: string
+            not_in: "pelnomocnicy[].imie_nazwisko"
             validator: person
             verify_in_text: true
             desc: "Imię i nazwisko osoby podpisującej pełnomocnictwo w imieniu mocodawcy (np. członek zarządu, prezes)."

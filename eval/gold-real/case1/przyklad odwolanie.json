@@ -1,0 +1,38 @@
+{
+  "OdwolanieKIO": {
+    "data": "2025-06-16",
+    "czynnosc_dzien": "2025-06-10",
+    "czynnosc_powod_id": 4,
+    "czynnosc_opis": "Publikacja specyfikacji warunków zamówienia (SWZ)",
+    "miejscowosc": "Warszawa"
+  },
+  "Odwolujacy": [
+    {
+      "krs": null,
+      "nazwa": "BIOARCUS Spółka z ograniczoną odpowiedzialnością",
+      "nip": null,
+      "regon": null,
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": null,
+        "nazwa": null,
+        "mail": null
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": null,
+      "nazwa": "Miejskie Przedsiębiorstwo Oczyszczania w m. st. Warszawie Spółka z ograniczoną odpowiedzialnością",
+      "nip": null,
+      "regon": null,
+      "prowadzacy_postepowanie": null
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": "2025/BZP00270698",
+    "numer_postepowania": "RZP.27.29.2025.KD",
+    "numer_ted": null,
+    "tytul": "Dostawa preparatów do instalacji przetwarzania odpadów zlokalizowanej przy ul. Kampinoskiej 1 w Warszawie"
+  }
+}

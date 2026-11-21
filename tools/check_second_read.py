@@ -58,22 +58,24 @@ def main() -> int:
             if kind in ("date", "amount", "person", "email") or sum(ch.isdigit() for ch in value) < 4 or len(value) > 40:
                 continue                       # gold ma daty i kwoty znormalizowane - nie da się ich szukać w tekście
             first = second_read(value, primary, doc.alt_text())
-            res = first if first is not False else ocr_confirms(doc, value, primary)
-            name = {None: "brak_w_glownym", True: "zgodne", False: "rozbiezne"}[res]
-            stats[kind][name] += 1
-            stats[kind]["trzeci_odczyt"] += first is False
-            if res is False:
-                lost.append(f"{item['case']}/{Path(item['pdf']).name} {path} = {value}")
+            res = first if first in ("zgodne", None) else ocr_confirms(doc, value, primary)
+            stats[kind][res or "brak_w_glownym"] += 1
+            stats[kind]["trzeci_odczyt"] += first not in ("zgodne", None)
+            if res in ("rozbiezne", "brak"):
+                lost.append(f"[{res}] {item['case']}/{Path(item['pdf']).name} {path} = {value}")
     print(f"dokumentów: {len(manifest)}, stron: {pages}, czas wczytania z dwoma odczytami: {time.perf_counter() - t0:.0f} s "
           f"({(time.perf_counter() - t0) / max(pages, 1):.1f} s/str.)")
     total = Counter()
     for kind, c in sorted(stats.items()):
         total.update(c)
-        print(f"  {kind:6s} zgodne={c['zgodne']:3d}  rozbieżne={c['rozbiezne']:3d}  brak w odczycie głównym={c['brak_w_glownym']:3d}"
+        print(f"  {kind:6s} zgodne={c['zgodne']:3d}  rozbieżne={c['rozbiezne']:3d}  linia nieodczytana={c['brak']:3d}"
+              f"  brak w odczycie głównym={c['brak_w_glownym']:3d}"
               f"  (trzeci odczyt potrzebny: {c['trzeci_odczyt']})")
-    n = (total["zgodne"] + total["rozbiezne"] + total["brak_w_glownym"]) or 1
+    n = (total["zgodne"] + total["rozbiezne"] + total["brak"] + total["brak_w_glownym"]) or 1
     print(f"  RAZEM  zgodne={total['zgodne']} ({total['zgodne'] / n:.1%})  rozbieżne={total['rozbiezne']} "
-          f"({total['rozbiezne'] / n:.1%})  brak w głównym={total['brak_w_glownym']} ({total['brak_w_glownym'] / n:.1%})")
+          f"({total['rozbiezne'] / n:.1%})  linia nieodczytana={total['brak']} ({total['brak'] / n:.1%})  "
+          f"brak w głównym={total['brak_w_glownym']} ({total['brak_w_glownym'] / n:.1%})")
+    print("  rozbieżne = wartość zostałaby wyzerowana; linia nieodczytana = wartość zostaje z ostrzeżeniem")
     for line in lost[:20]:
         print("   poprawna wartość niepotwierdzona:", line)
     return 0

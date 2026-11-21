@@ -10,15 +10,16 @@ Wynik każdego pola trafia do śladu (trace) ze źródłem i statusem.
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 
 from .config import DocClass, Section, is_leaf
-from .crosscheck import resolve_duplicates
+from .crosscheck import apply_field_rules, resolve_duplicates
 from .pdfio import ALT_DPIS, UNREADABLE, Document
-from .textmatch import (ID_LENGTHS, appears_in, digits_in_text, fold, person_in, second_read, snap_digits, snap_span,
-                        snap_text, words_in)
-from .validators import VALIDATORS
+from .textmatch import (ID_LENGTHS, _compact, appears_in, dates_in_text, digits_in_text, fold, person_in, second_read,
+                        snap_digits, snap_span, snap_text, words_in)
+from .validators import VALIDATORS, digits_from_ocr, norm_date
 
 SYSTEM_PROMPT = (
     "Jesteś precyzyjnym ekstraktorem danych z polskich dokumentów urzędowych (zamówienia publiczne, KIO). "
@@ -87,12 +88,19 @@ class Extractor:
             answer = self.backend.fill(SYSTEM_PROMPT, self.static_prompt(cls), doc.text(max_pages=cls.pages), sections)
         else:
             answer = self.backend.complete(SYSTEM_PROMPT, self.build_prompt(doc, cls), cls.first_header() + "\n", 600)
+        data, trace = self.finish(doc, cls, answer)
+        return data, trace, answer
+
+    @staticmethod
+    def finish(doc: Document, cls: DocClass, answer: str) -> tuple[dict, list[dict]]:
+        """Formularz wypełniony przez model -> zweryfikowany JSON i ślad (bez udziału modelu)."""
         raw = parse_sheet(answer, cls)
         trace: list[dict] = []
         data = postprocess(cls.output, raw, doc, trace, "")
         resolve_duplicates(cls, data, trace, doc.text(max_pages=None))
+        apply_field_rules(cls, data, trace)
         apply_derived(cls, cls.output, data, data)
-        return data, trace, answer
+        return data, trace
 
 
 # ---------------------------------------------------------------- formularz -> surowa struktura
@@ -217,17 +225,12 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
                 result, status, note = None, "nieczytelne", note or "zła długość numeru"
     elif spec.get("verify_in_text") and result is not None:
         result, status, note = verify_text(str(result), text, kind, status, note)
+    elif result is not None and not value_in_text(kind, value, result, text):
+        # Data, kwota, numer ogłoszenia, e-mail: model nie może podać wartości, której w dokumencie nie ma.
+        result, status, note = None, "niezweryfikowane", "wartości nie ma w tekście dokumentu"
 
-    # Kontrola krzyżowa skanu: wartość musi wyjść tak samo z dwóch niezależnych odczytów OCR.
-    # Numery z poprawną sumą kontrolną są już potwierdzone inaczej; nazwisk i długich tekstów nie
-    # porównujemy znak po znaku (różnice w znakach diakrytycznych nie zmieniają znaczenia).
-    if result is not None and from_ocr and needs_second_read(kind, value, status):
-        probe = str(result) if kind in ID_LENGTHS else value
-        agreed = ocr_confirms(doc, probe, text)
-        if agreed is False:
-            result, status, note = None, "nieczytelne", "niezależne odczyty OCR dają różne wartości"
-        elif agreed and not note:
-            note = "potwierdzone drugim odczytem OCR"
+    if from_ocr:
+        result, status, note = cross_check_ocr(doc, kind, value, text, result, status, note)
 
     if result is not None and spec.get("output_type") == "integer":
         result = int(result)
@@ -235,20 +238,76 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
 
 
 CHECKSUM_KINDS = {"nip", "regon", "pesel", "nrb"}
+# Numer ze skanu ze złą sumą kontrolną, którego nie da się naprawić:
+#   strict (domyślnie) - null i pozycja do sprawdzenia (zasada: lepiej nie wpisać niż wpisać błędnie),
+#   agree              - zostaje z ostrzeżeniem, jeśli potwierdził go inny, niezależny odczyt OCR
+#                        (na wypadek dokumentów z fikcyjnymi numerami, jak w danych przykładowych).
+CHECKSUM_POLICY = os.environ.get("O2J_OCR_CHECKSUM", "strict")
 
 
-def ocr_confirms(doc: Document, probe: str, text: str) -> bool | None:
-    """Czy wartość z odczytu głównego potwierdza inny, niezależny odczyt OCR (2 z 3 odczytów).
+def cross_check_ocr(doc: Document, kind: str, value: str, text: str, result, status: str, note: str):
+    """Kontrola krzyżowa wartości ze skanu na niezależnych odczytach OCR (inne rozdzielczości).
 
-    None - nie da się ocenić (wartości w tej postaci nie ma w odczycie głównym).
-    Trzeci odczyt jest wykonywany dopiero wtedy, gdy drugi nie potwierdził wartości.
+    Numery z poprawną sumą kontrolną są potwierdzone inaczej; nazwisk i długich tekstów nie porównujemy
+    znak po znaku (różnice w znakach diakrytycznych nie zmieniają znaczenia).
     """
-    agreed = None
+    if kind in CHECKSUM_KINDS and status == "naprawiono":
+        # Poprawka jednego znaku na podstawie sumy kontrolnej musi być widoczna w innym odczycie.
+        if any(digits_in_text(str(result), doc.alt_text(dpi)) for dpi in ALT_DPIS):
+            return result, status, note + "; potwierdzone innym odczytem OCR"
+        result, status, note = None, "nieczytelne", note + "; poprawki nie potwierdza żaden inny odczyt OCR"
+    if kind in CHECKSUM_KINDS and result is None and status == "nieczytelne":
+        for dpi in ALT_DPIS:                    # może inny odczyt ma ten numer z poprawną sumą
+            other = snap_digits(value, doc.alt_text(dpi), kind)
+            if other and VALIDATORS[kind](other, True).status == "ok":
+                return other, "naprawiono", f"{value!r} -> numer z innego odczytu OCR (poprawna suma kontrolna)"
+        digits = digits_from_ocr(value)
+        if CHECKSUM_POLICY == "agree" and len(digits) in ID_LENGTHS[kind] and ocr_confirms(doc, digits, text) == "zgodne":
+            return digits, "ostrzezenie", "zła suma kontrolna, ale numer potwierdza inny odczyt OCR"
+        return result, status, note
+    if result is None or not needs_second_read(kind, value, status):
+        return result, status, note
+    verdict = ocr_confirms(doc, str(result) if kind in ID_LENGTHS else value, text)
+    if verdict == "rozbiezne":
+        return None, "nieczytelne", "niezależne odczyty OCR dają różne wartości"
+    if verdict == "brak":
+        return result, "ostrzezenie", "wartości nie potwierdził inny odczyt OCR (linia nieodczytana)"
+    if verdict == "zgodne" and not note:
+        note = "potwierdzone innym odczytem OCR"
+    return result, status, note
+
+
+def ocr_confirms(doc: Document, probe: str, text: str) -> str | None:
+    """Werdykt niezależnych odczytów OCR dla wartości z odczytu głównego (patrz textmatch.second_read).
+
+    Wystarczy jeden zgodny odczyt (2 z 3). Kolejny odczyt jest wykonywany tylko wtedy, gdy poprzedni
+    wartości nie potwierdził.
+    """
+    verdicts = []
     for dpi in ALT_DPIS:
-        agreed = second_read(probe, text, doc.alt_text(dpi))
-        if agreed is not False:
-            break
-    return agreed
+        verdict = second_read(probe, text, doc.alt_text(dpi))
+        if verdict == "zgodne":
+            return verdict
+        verdicts.append(verdict)
+    for verdict in ("rozbiezne", "brak"):
+        if verdict in verdicts:
+            return verdict
+    return None
+
+
+def value_in_text(kind: str, raw: str, result, text: str) -> bool:
+    """Czy wartość (w postaci podanej przez model albo po normalizacji) występuje w dokumencie."""
+    if _compact(raw) in _compact(text):
+        return True
+    if kind == "date":
+        return str(result) in dates_in_text(text, norm_date)
+    if kind == "amount":
+        whole = str(int(float(result)))
+        return len(whole) >= 2 and whole in re.sub(r"[\s .']", "", text)
+    if kind in ("bzp", "ted"):
+        parts = [d for d in re.findall(r"\d+", str(result)) if len(d) >= 5]
+        return bool(parts) and all(d in re.sub(r"[\s\-]", "", text) for d in parts)
+    return _compact(str(result)) in _compact(text)
 
 
 def needs_second_read(kind: str, value: str, status: str) -> bool:

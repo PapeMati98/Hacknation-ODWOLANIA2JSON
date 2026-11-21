@@ -15,7 +15,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import pdfio
+from . import extract, pdfio
 from .config import load_classes
 from .crosscheck import case_findings, load_rules, review_entries
 from .extract import Extractor, classify
@@ -34,8 +34,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", default=os.environ.get("O2J_MODEL", str(APP_ROOT / "models" / "Qwen3.5-4B-Q4_K_M.gguf")))
     ap.add_argument("--threads", type=int, default=int(os.environ.get("O2J_THREADS", default_threads())))
     ap.add_argument("--only", help="przetwórz tylko te sprawy (lista po przecinku)")
+    ap.add_argument("--ocr-checksum", choices=("strict", "agree"), default=extract.CHECKSUM_POLICY,
+                    help="numer ze skanu ze złą sumą kontrolną: strict = null i pozycja do sprawdzenia (domyślnie); "
+                         "agree = zostaje z ostrzeżeniem, gdy potwierdza go inny, niezależny odczyt OCR")
     args = ap.parse_args(argv)
     sys.stdout.reconfigure(encoding="utf-8")
+    extract.CHECKSUM_POLICY = args.ocr_checksum
 
     classes = load_classes(args.classes)
     by_name = {c.name: c for c in classes}

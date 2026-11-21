@@ -130,16 +130,51 @@ def _lcs(a: str, b: str) -> int:
     return best
 
 
+_OCR_TWINS = str.maketrans({"o": "0", "l": "1", "i": "1", "|": "1"})
+
+
 def _compact(s: str) -> str:
-    return re.sub(r"[\s\-.,:/]", "", fold(s))
+    """Postać do porównań między odczytami: bez odstępów i separatorów, z ujednoliconymi znakami,
+    które OCR myli najczęściej (O/0, l/I/1)."""
+    return re.sub(r"[\s\-.,:/]", "", fold(s)).translate(_OCR_TWINS)
 
 
-def second_read(value: str, primary: str, alt: str) -> bool | None:
-    """Czy wartość z odczytu głównego występuje też w drugim, niezależnym odczycie OCR.
+def second_read(value: str, primary: str, alt: str) -> str | None:
+    """Porównuje wartość z odczytu głównego z innym, niezależnym odczytem OCR.
 
-    None - nie da się ocenić (wartości w tej postaci nie ma w odczycie głównym, np. model ją przepisał inaczej).
+    "zgodne"    - drugi odczyt zawiera tę samą wartość,
+    "rozbiezne" - drugi odczyt zawiera w tym miejscu inną wartość (wariant różniący się kilkoma znakami,
+                  którego nie ma w odczycie głównym),
+    "brak"      - drugi odczyt w ogóle nie zawiera tej linii (nie potwierdza, ale i nie zaprzecza),
+    None        - nie da się ocenić: wartości w tej postaci nie ma w odczycie głównym.
     """
-    v = _compact(value)
-    if len(v) < 3 or v not in _compact(primary):
+    v, p, a = _compact(value), _compact(primary), _compact(alt)
+    n = len(v)
+    if n < 3 or v not in p:
         return None
-    return v in _compact(alt)
+    if v in a:
+        return "zgodne"
+    limit = max(1, int(0.3 * n))
+    for i in range(len(a) - n + 1):
+        w = a[i: i + n]
+        diff = sum(x != y for x, y in zip(v, w))
+        if 0 < diff <= limit and w not in p:
+            return "rozbiezne"
+    if n >= 6:
+        for k in range(n):                      # drugi odczyt zgubił jeden znak
+            w = v[:k] + v[k + 1:]
+            if w in a and w not in p:
+                return "rozbiezne"
+    return "brak"
+
+
+def dates_in_text(text: str, normalize) -> set[str]:
+    """Wszystkie daty występujące w tekście, znormalizowane funkcją `normalize` (RRRR-MM-DD)."""
+    out = set()
+    for pattern in (r"\d{4}-\d{1,2}-\d{1,2}", r"\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{4}",
+                    r"\d{1,2}\s+[a-ząćęłńóśźż]+\s+\d{4}"):
+        for m in re.finditer(pattern, text.lower()):
+            value = normalize(m.group(0)).value
+            if value:
+                out.add(value)
+    return out

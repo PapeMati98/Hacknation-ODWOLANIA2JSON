@@ -2,10 +2,11 @@
 from pathlib import Path
 
 from odwolania2json.config import load_classes
-from odwolania2json.crosscheck import case_findings, get_values, load_rules, resolve_duplicates, review_entries
-from odwolania2json.extract import needs_second_read, parse_sheet, verify_text
+from odwolania2json.crosscheck import (apply_field_rules, case_findings, get_values, load_rules, resolve_duplicates,
+                                       review_entries)
+from odwolania2json.extract import needs_second_read, parse_sheet, value_in_text, verify_text
 from odwolania2json.textmatch import person_in, second_read, snap_span
-from odwolania2json.validators import norm_person
+from odwolania2json.validators import norm_person, norm_text
 
 APP = Path(__file__).resolve().parent.parent
 CLASSES = {c.name: c for c in load_classes(APP / "configs" / "classes")}
@@ -42,8 +43,10 @@ def test_repeated_key_starts_new_list_item():
 
 def test_second_ocr_read():
     primary, alt_same, alt_diff = "KRS: 0000123456 z dnia 16.06.2025", "KRS 0000123456, 16.06.2025", "KRS: 0000128456"
-    assert second_read("0000123456", primary, alt_same) is True
-    assert second_read("0000123456", primary, alt_diff) is False
+    assert second_read("0000123456", primary, alt_same) == "zgodne"
+    assert second_read("0000123456", primary, alt_diff) == "rozbiezne"
+    assert second_read("0000123456", primary, "zupełnie inna linia tekstu") == "brak"    # linia nieodczytana
+    assert second_read("0000123456", primary, "KRS: OOOO123456") == "zgodne"            # O zamiast 0 to ten sam odczyt
     assert second_read("9999999999", primary, alt_same) is None      # wartości nie ma w odczycie głównym
     assert needs_second_read("krs", "0000123456", "ok") and needs_second_read("date", "16.06.2025", "ok")
     assert not needs_second_read("nip", "5260250274", "ok")           # poprawna suma kontrolna wystarcza
@@ -88,3 +91,32 @@ def test_cross_document_rules():
     assert {f["regula"] for f in case_findings(RULES, [("o.pdf", "odwolanie", odw)])} == {"czynnosc-przed-odwolaniem"}
     amount = [{"id": "kwota", "kind": "one_of", "field": "przelew:przelew_bankowy.kwota", "values": [7500, 15000]}]
     assert len(case_findings(amount, [("t.pdf", "przelew", prz)])) == 1
+
+
+def test_value_must_be_present_in_document():
+    text = "Rzeszów, dnia 5 czerwca 2026 roku. Wpis w kwocie 15 000,00 PLN. Ogłoszenie nr 2026/BZP 00123456."
+    assert value_in_text("date", "5 czerwca 2026 roku", "2026-06-05", text)
+    assert value_in_text("date", "05.06.2026", "2026-06-05", text)             # inny zapis tej samej daty
+    assert not value_in_text("date", "16 czerwca 2025 r.", "2025-06-16", text)  # data przepisana z instrukcji
+    assert value_in_text("amount", "15000 zł", 15000.0, text)
+    assert not value_in_text("amount", "7 500,00", 7500.0, text)
+    assert value_in_text("bzp", "2026/BZP00123456", "2026/BZP00123456", text)
+
+
+def test_field_rules_from_yaml():
+    odw = {"OdwolanieKIO": {"data": None, "miejscowosc": "Warszawa", "czynnosc_dzien": None, "czynnosc_powod_id": 1}}
+    trace = [{"pole": "OdwolanieKIO.miejscowosc", "status": "ok", "surowa": "Warszawa"}]
+    apply_field_rules(CLASSES["odwolanie"], odw, trace)
+    assert odw["OdwolanieKIO"]["miejscowosc"] is None and trace[0]["status"] == "niezweryfikowane"
+
+    pel = {"mocodawca": [{"data": {"nazwa": "ALFA"}, "podpisujacy": [{"imie_nazwisko": "Halina Mazur"},
+                                                                    {"imie_nazwisko": "Cezary Walczak"}]}],
+           "pelnomocnicy": [{"imie_nazwisko": "Cezary Walczak", "pesel": None}]}
+    apply_field_rules(CLASSES["pelnomocnictwo"], pel, [])
+    assert pel["mocodawca"][0]["podpisujacy"] == [{"imie_nazwisko": "Halina Mazur"}]
+    assert pel["pelnomocnicy"] == [{"imie_nazwisko": "Cezary Walczak", "pesel": None}]
+
+
+def test_quotes_are_not_part_of_names():
+    assert norm_text('BIOARCUS"Spółka z o.o.').value == "BIOARCUS Spółka z o.o."
+    assert norm_text("„ALFA” S.A.").value == "ALFA S.A."

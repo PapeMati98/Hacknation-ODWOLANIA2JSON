@@ -59,6 +59,7 @@ Plik JSON ma tę samą nazwę co PDF i leży w podfolderze tej samej sprawy. Obo
 | `--model` / `O2J_MODEL` | plik GGUF modelu lokalnego | `models/Qwen3.5-4B-Q4_K_M.gguf` |
 | `--cross-checks` | reguły kontroli krzyżowej między dokumentami sprawy | `configs/cross_checks.yaml` |
 | `--threads` / `O2J_THREADS` | liczba wątków CPU | połowa rdzeni, najwyżej 6 |
+| `--ocr-checksum` / `O2J_OCR_CHECKSUM` | numer ze skanu ze złą sumą kontrolną: `strict` = `null` i pozycja do sprawdzenia; `agree` = zostaje z ostrzeżeniem, gdy potwierdza go inny, niezależny odczyt OCR | `strict` |
 | `O2J_API_BASE`, `O2J_API_MODEL`, `O2J_API_KEY` | model serwowany przez API zgodne z OpenAI (zamiast lokalnego) | — |
 
 ## Architektura
@@ -87,11 +88,13 @@ Na CPU czas zależy głównie od liczby generowanych tokenów. Formularz `klucz:
 Model lokalny wypełnia formularz w sposób prowadzony: klucze podaje mu kod (szybkie przetwarzanie wsadowe), a model generuje wyłącznie wartości. Stan modelu po przeczytaniu instrukcji i opisu pól danej klasy jest zapamiętywany, więc dla kolejnych dokumentów tej klasy czytany jest już tylko tekst dokumentu. Lista podmiotów kończy się, gdy model przestaje podawać nowe — powtórzenie już wpisanego podmiotu jest odrzucane.
 
 ### Kontrola krzyżowa
-Sprawdzenie pojedynczego pola nie wystarcza: KRS, daty, kwoty i numery ogłoszeń nie mają sumy kontrolnej, a poprawny numer może trafić do niewłaściwego podmiotu. Dlatego wynik przechodzi trzy dodatkowe kontrole:
+Sprawdzenie pojedynczego pola nie wystarcza: KRS, daty, kwoty i numery ogłoszeń nie mają sumy kontrolnej, a poprawny numer może trafić do niewłaściwego podmiotu. Dlatego wynik przechodzi dodatkowe kontrole:
 
-1. **Dwa niezależne odczyty skanu.** Wartość z OCR bez sumy kontrolnej (KRS, data, kwota, numer BZP/TED, sygnatura, numer transakcji) musi wyjść identycznie z dwóch odczytów w różnej rozdzielczości. Rozbieżność → `null` i pozycja na liście do sprawdzenia.
-2. **Kontrola przypisania.** Ten sam NIP / KRS / REGON / rachunek nie może trafić do kilku pól. Numer zostaje przy tym podmiocie, przy którego nazwie leży w dokumencie; gdy nie da się tego ustalić — znika ze wszystkich pól.
-3. **Zgodność między dokumentami sprawy** (`configs/cross_checks.yaml`): Odwołujący z odwołania ↔ mocodawca z pełnomocnictwa (KRS, NIP, nazwa), pełnomocnik z odwołania ↔ pełnomocnicy z pełnomocnictwa, kolejność dat. Rozbieżność jest zgłaszana, ale nie zmienia JSON-ów — nie wiadomo, który dokument ma rację. Na 60 przykładowych sprawach organizatora reguły nie dają ani jednego fałszywego alarmu.
+1. **Niezależne odczyty skanu.** Każda strona skanu jest czytana w dwóch rozdzielczościach, a przy wątpliwości w trzeciej. Wartość bez sumy kontrolnej (KRS, data, kwota, numer BZP/TED, sygnatura, numer transakcji) musi powtórzyć się w innym odczycie. Inny odczyt daje inną wartość → `null`. Inny odczyt w ogóle nie zawiera tej linii → wartość zostaje z ostrzeżeniem. Poprawka numeru o jeden znak na podstawie sumy kontrolnej jest przyjmowana tylko wtedy, gdy poprawiony numer widać w innym odczycie.
+2. **Wartość musi być w dokumencie.** Dotyczy każdego pola, także dat, kwot i numerów ogłoszeń: model nie może podać wartości, której w tekście nie ma (np. przepisanej z instrukcji).
+3. **Kontrola przypisania.** Ten sam NIP / KRS / REGON / rachunek nie może trafić do kilku pól. Numer zostaje przy tym podmiocie, przy którego nazwie leży w dokumencie; gdy nie da się tego ustalić — znika ze wszystkich pól.
+4. **Zależności między polami** (w YAML klasy): `requires` — pole ma sens tylko razem z innym (miejscowość z nagłówka tylko z datą); `not_in` — wartość nie może powtarzać się na innej liście (podpisujący pełnomocnictwo nie może być pełnomocnikiem).
+5. **Zgodność między dokumentami sprawy** (`configs/cross_checks.yaml`): Odwołujący z odwołania ↔ mocodawca z pełnomocnictwa (KRS, NIP, nazwa), pełnomocnik z odwołania ↔ pełnomocnicy z pełnomocnictwa, kolejność dat. Rozbieżność jest zgłaszana, ale nie zmienia JSON-ów — nie wiadomo, który dokument ma rację. Na 60 przykładowych sprawach organizatora reguły nie dają ani jednego fałszywego alarmu.
 
 Reguły między dokumentami dopisuje się w YAML, bez zmian w kodzie (rodzaje: `same`, `not_after`, `one_of`).
 
@@ -103,9 +106,9 @@ Dla każdego pola w `trace/<sprawa>/<plik>.trace.json` zapisywane są: wartość
 | `ok` | wartość przeszła walidację |
 | `naprawiono` | błąd OCR jednego znaku poprawiony na podstawie sumy kontrolnej |
 | `dopasowano` | wartość modelu zastąpiona dosłownym fragmentem dokumentu (ucięte słowo, zmieniona końcówka, niepełny numer) |
-| `ostrzezenie` | odczyt dokładny (warstwa tekstowa), ale np. zła suma kontrolna — wartość zachowana, pozycja na liście do sprawdzenia |
+| `ostrzezenie` | wartość zachowana, ale trafia na listę do sprawdzenia: zła suma kontrolna przy odczycie dokładnym (warstwa tekstowa) albo brak potwierdzenia w drugim odczycie OCR |
 | `nieczytelne` | wartość z OCR nie przechodzi walidacji i nie da się jej jednoznacznie naprawić albo dwa odczyty OCR się różnią → `null` |
-| `niezweryfikowane` | wartości nie ma w tekście dokumentu albo numer przypisano do kilku pól → `null` |
+| `niezweryfikowane` | wartości nie ma w tekście dokumentu, numer przypisano do kilku pól albo pole łamie regułę `requires` / `not_in` → `null` |
 | `brak` | informacji nie ma w dokumencie |
 
 ## Jak dodać nową klasę dokumentu
@@ -159,7 +162,7 @@ output:                        # struktura wynikowego JSON
 ```
 
 Dostępne walidatory: `text`, `person` (imię i nazwisko bez tytułów), `date`, `amount`, `email`, `nip`, `regon`, `pesel`, `krs`, `nrb`, `bzp`, `ted`.
-Opcje pola: `verify_in_text`, `enum`, `enum_from`, `derive`, `only_if_multiple` (pole wypełniane tylko, gdy lista ma kilka elementów), `output_type: integer`.
+Opcje pola: `verify_in_text`, `enum`, `enum_from`, `derive`, `only_if_multiple` (pole wypełniane tylko, gdy lista ma kilka elementów), `requires`, `not_in`, `output_type: integer`.
 Podpowiedzi do pozycji słownika (jak dana pozycja bywa opisana w dokumentach) wpisuje się w sekcji `hints`.
 
 ## Ocena jakości
@@ -173,6 +176,8 @@ python tools/score.py --manifest eval/manifest.json --pred eval/out --split dev
 
 - `tools/score.py` — F1 według definicji organizatora (błędna wartość = FP, brak = FN, długie teksty z progiem 80%, elementy list dopasowywane po treści).
 - `tools/make_scandev.py` — zamienia tekstowe PDF-y w „skany” (render, obrót, szum, JPEG) do testu ścieżki OCR.
+- `tools/replay.py` — przelicza weryfikację i kontrolę krzyżową na zapisanych odpowiedziach modelu (bez uruchamiania modelu); `tools/check_second_read.py` — zgodność niezależnych odczytów OCR.
+- `eval/splits.json` — podział spraw przykładowych: `dev` (48 spraw, strojenie), `holdout` (12 spraw, zamrożone do pomiaru końcowego), `scandev` (10 spraw zamienionych na skany); `eval/gold-real/` — gold dla realnego skanu organizatora.
 - `tools/check_classify.py` — macierz pomyłek klasyfikatora, `tools/bench_ocr.py` — czas i dokładność OCR, `tools/diff_pred.py` — różnice pole po polu.
 - `tests/` — testy jednostkowe walidatorów, dopasowania do tekstu i kontroli krzyżowej (`python -m pytest tests`).
 
