@@ -567,3 +567,23 @@ def test_ocr_po_api(tmp_path, monkeypatch):
         assert pdfio.remote_ocr(str(pdf), [0]) is None
     finally:
         server.shutdown()
+
+
+def test_api_env(tmp_path, monkeypatch):
+    """Plik api.env ustawia zmienne O2J_*, ale nie nadpisuje tych ze środowiska."""
+    import os
+    from odwolania2json import load_api_env
+    path = tmp_path / "api.env"
+    path.write_text("# usługa modelu
+O2J_API_BASE=https://przyklad.test/v1
+O2J_API_MODEL = 'model-a'
+INNA=1
+O2J_API_KEY=z-pliku
+", encoding="utf-8")
+    for name in ("O2J_API_BASE", "O2J_API_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("O2J_API_KEY", "ze-srodowiska")
+    assert load_api_env(path) == ["O2J_API_BASE", "O2J_API_MODEL"]
+    assert os.environ["O2J_API_BASE"] == "https://przyklad.test/v1" and os.environ["O2J_API_MODEL"] == "model-a"
+    assert os.environ["O2J_API_KEY"] == "ze-srodowiska" and "INNA" not in os.environ
+    monkeypatch.delenv("O2J_API_BASE"); monkeypatch.delenv("O2J_API_MODEL")
