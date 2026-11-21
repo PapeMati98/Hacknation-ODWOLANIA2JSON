@@ -13,7 +13,7 @@ Rozwiązanie zadania **Odwołania2json** (Urząd Zamówień Publicznych, HackNat
 
 ### Przykład dla jury
 
-Z kluczem z formularza zgłoszeniowego ustaw adres publicznego API i nazwę modelu zgodnie z [instrukcją jury](./docs/INSTRUKCJA-JURY.md). W PowerShell uruchom `.\start_ui.bat` i otwórz `http://127.0.0.1:8080`. Wgraj plik `przelew.pdf` ze sprawy `przyklad_02`, uruchom ekstrakcję i pobierz `przelew.json`. Sześć pól można porównać z plikiem o tej samej nazwie u organizatora. Przycisk „Pobierz ZIP sprawy” pobiera wszystkie wyniki. [Przykład i wzorzec UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/tree/0b360a9da4b482a6a280696df6714404e0953505/dane/przyklad_02) · [Prezentacja projektu](./docs/Odwolania2JSON-prezentacja.pdf) · [Treść zgłoszenia HackTribe](./docs/DRAFT-HACKTRIBE.md)
+Z kluczem z formularza zgłoszeniowego ustaw adres publicznego API i nazwę modelu zgodnie z [instrukcją jury](./docs/INSTRUKCJA-JURY.md). W PowerShell uruchom `.\start_ui.bat` i otwórz `http://127.0.0.1:8080`. Wgraj plik `przelew.pdf` ze sprawy `przyklad_02`, uruchom ekstrakcję i pobierz `przelew.json`. Sześć pól można porównać z plikiem o tej samej nazwie u organizatora. Przycisk „Pobierz ZIP sprawy” pobiera wszystkie wyniki. [Przykład i wzorzec UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/tree/0b360a9da4b482a6a280696df6714404e0953505/dane/przyklad_02) · [Prezentacja projektu (PDF)](./docs/Odwolania2JSON-prezentacja.pdf) · [Materiały do wystąpienia, PowerPoint i przykład do demo](./docs/prezentacja/README.md) · [Treść zgłoszenia HackTribe](./docs/DRAFT-HACKTRIBE.md)
 
 ### Wariant lokalny z Qwenem
 
@@ -23,13 +23,13 @@ W tym wariancie wymagania to Windows lub Linux, Python 3.13+, ok. 5 GB wolnego R
 start.bat
 ```
 
-Skrypt przy pierwszym uruchomieniu tworzy środowisko `.venv`, instaluje zależności z `requirements.txt` i pobiera model. Potem przetwarza wszystko z folderu `input`.
+Skrypt przy pierwszym uruchomieniu tworzy środowisko `.venv` i instaluje zależności z `requirements.txt`. W wariancie lokalnym instaluje również `requirements-local.txt` i pobiera wagi modelu. Następnie przetwarza pliki z folderu `input`.
 
 Ręcznie:
 
 ```bash
 python -m venv .venv
-.venv/Scripts/python -m pip install -r requirements.txt --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+.venv/Scripts/python -m pip install -r requirements-local.txt
 .venv/Scripts/python tools/download_models.py
 .venv/Scripts/python -m odwolania2json
 ```

@@ -1,0 +1,21 @@
+name: protokol_przekazania
+description: Protokół przekazania dokumentów między zespołami.
+pages: 1
+classify:
+  title: ["protokół przekazania"]
+  keywords:
+    "protokół przekazania": 5
+    "numer protokołu": 3
+    "data przekazania": 3
+  min_score: 4
+output:
+  protokol_przekazania:
+    numer_protokolu:
+      type: string
+      validator: text
+      verify_in_text: true
+      desc: "Identyfikator dokumentu po etykiecie Numer protokołu. Przepisz pełny numer."
+    data_przekazania:
+      type: string
+      validator: date
+      desc: "Data po etykiecie Data przekazania."
