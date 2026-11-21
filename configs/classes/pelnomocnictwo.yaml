@@ -1,0 +1,60 @@
+name: pelnomocnictwo
+description: >-
+  Pełnomocnictwo: dokument, w którym mocodawca (podmiot lub osoba) udziela umocowania
+  pełnomocnikom do reprezentowania go, np. w postępowaniu odwoławczym przed KIO.
+pages: 2
+classify:
+  title: ["pełnomocnictwo"]
+  keywords:
+    "pełnomocnictwo": 4
+    "udzielam": 2
+    "ustanawiam": 2
+    "upoważniam": 2
+    "umocowan": 2
+    "pełnomocnik": 2
+    "mocodawc": 2
+  negative:
+    "wnoszę odwołanie": 4
+    "potwierdzenie przelewu": 3
+output:
+  mocodawca:
+    - data:
+        imie_nazwisko:
+          type: string
+          validator: text
+          verify_in_text: true
+          desc: "Imię i nazwisko mocodawcy tylko gdy jest osobą fizyczną; dla firmy/spółki null."
+        krs:
+          type: string
+          validator: krs
+          desc: "KRS mocodawcy będącego osobą prawną."
+        nazwa:
+          type: string
+          validator: text
+          verify_in_text: true
+          desc: "Pełna nazwa mocodawcy (firma z formą prawną)."
+        nip:
+          type: string
+          validator: nip
+          desc: "NIP mocodawcy."
+        typ:
+          type: string
+          enum: [osoba_prawna, osoba_fizyczna]
+          desc: "osoba_prawna dla spółek/firm/instytucji, osoba_fizyczna dla człowieka."
+      podpisujacy:
+        - imie_nazwisko:
+            type: string
+            validator: text
+            verify_in_text: true
+            desc: "Imię i nazwisko osoby podpisującej pełnomocnictwo w imieniu mocodawcy (np. członek zarządu, prezes)."
+  pelnomocnicy:
+    - imie_nazwisko:
+        type: string
+        validator: text
+        verify_in_text: true
+        desc: "Imię i nazwisko osoby otrzymującej pełnomocnictwo, w mianowniku."
+      pesel:
+        type: string
+        validator: pesel
+        output_type: integer
+        desc: "PESEL pełnomocnika, 11 cyfr, tylko jeśli podany."

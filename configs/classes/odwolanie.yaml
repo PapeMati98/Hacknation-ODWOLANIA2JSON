@@ -1,0 +1,132 @@
+# Klasa dokumentu: odwołanie do Prezesa Krajowej Izby Odwoławczej.
+# Każde pole liścia: type (string|integer|number), validator (validators.VALIDATORS),
+# desc (instrukcja dla modelu), opcjonalnie enum, derive, verify_in_text.
+name: odwolanie
+description: >-
+  Odwołanie wnoszone do Prezesa Krajowej Izby Odwoławczej przez wykonawcę (Odwołującego)
+  wobec czynności lub zaniechania Zamawiającego w postępowaniu o udzielenie zamówienia publicznego.
+pages: 3            # ile pierwszych stron czytać (kluczowe dane są zwykle na 1-3 stronie)
+classify:
+  title: ["odwołanie"]
+  keywords:
+    "odwołanie": 2
+    "krajowej izby odwoławczej": 3
+    "odwołujący": 3
+    "wnoszę odwołanie": 4
+    "zarzut": 1
+    "zamawiający": 1
+  negative:
+    "pełnomocnictwo": 1
+    "potwierdzenie przelewu": 3
+dictionaries:
+  powody:
+    1: Decyzja o odrzuceniu oferty
+    2: Ogłoszenie wyboru oferty
+    3: Decyzja o wykluczeniu wykonawcy
+    4: Publikacja specyfikacji warunków zamówienia (SWZ)
+    5: Modyfikacja treści SWZ
+    6: Odpowiedzi i wyjaśnienia do SWZ
+    7: Zaniechanie odrzucenia oferty
+    8: Zaniechanie wykluczenia wykonawcy
+    9: Decyzja o unieważnieniu postępowania
+    10: Zaniechanie unieważnienia postępowania
+    11: Opis przedmiotu zamówienia (OPZ)
+output:
+  OdwolanieKIO:
+    data:
+      type: string
+      validator: date
+      desc: "Data z nagłówka pierwszej strony (np. 'Warszawa, dnia 16 czerwca 2025 r.'), format YYYY-MM-DD. Brak daty w nagłówku = null."
+    czynnosc_dzien:
+      type: string
+      validator: date
+      desc: "Data czynności Zamawiającego, której dotyczy PIERWSZY zarzut (np. dzień publikacji SWZ, wyboru oferty, unieważnienia), YYYY-MM-DD; brak wiarygodnej daty = null."
+    czynnosc_powod_id:
+      type: integer
+      enum_from: powody
+      desc: "Rodzaj zaskarżonej czynności ustalony WYŁĄCZNIE na podstawie pierwszego zarzutu; wybierz numer ze słownika."
+    czynnosc_opis:
+      derive: {dictionary: powody, key: OdwolanieKIO.czynnosc_powod_id}
+    miejscowosc:
+      type: string
+      validator: text
+      verify_in_text: true
+      desc: "Miejscowość z nagłówka pierwszej strony, z linii typu 'X, dnia ...'. Brak = null."
+  Odwolujacy:
+    - krs:
+        type: string
+        validator: krs
+        desc: "KRS Odwołującego (lub lidera konsorcjum), 10 cyfr."
+      nazwa:
+        type: string
+        validator: text
+        verify_in_text: true
+        desc: "Pełna nazwa Odwołującego (wykonawcy wnoszącego odwołanie) razem z formą prawną; przy konsorcjum nazwa lidera."
+      nip:
+        type: string
+        validator: nip
+        desc: "NIP Odwołującego (lub lidera), 10 cyfr."
+      regon:
+        type: string
+        validator: regon
+        desc: "REGON Odwołującego (lub lidera), 9 lub 14 cyfr."
+      przez-pelnomocnika:
+        type: integer
+        enum: [0, 1]
+        desc: "1 jeśli Odwołujący działa przez pełnomocnika (radca prawny, adwokat, kancelaria), inaczej 0."
+      pelnomocnik:
+        imie_nazwisko:
+          type: string
+          validator: text
+          verify_in_text: true
+          desc: "Imię i nazwisko pełnomocnika Odwołującego."
+        nazwa:
+          type: string
+          validator: text
+          verify_in_text: true
+          desc: "Nazwa kancelarii lub podmiotu zatrudniającego pełnomocnika."
+        mail:
+          type: string
+          validator: email
+          desc: "Adres e-mail pełnomocnika."
+  Zamawiajacy:
+    - krs:
+        type: string
+        validator: krs
+        desc: "KRS Zamawiającego, tylko jeśli podany przy Zamawiającym."
+      nazwa:
+        type: string
+        validator: text
+        verify_in_text: true
+        desc: "Pełna nazwa Zamawiającego razem z formą prawną."
+      nip:
+        type: string
+        validator: nip
+        desc: "NIP Zamawiającego, tylko jeśli podany przy Zamawiającym."
+      regon:
+        type: string
+        validator: regon
+        desc: "REGON Zamawiającego, tylko jeśli podany przy Zamawiającym."
+      prowadzacy_postepowanie:
+        type: integer
+        enum: [0, 1]
+        desc: "null gdy jest jeden Zamawiający; przy kilku: 1 gdy oznaczony jako prowadzący/lider postępowania, inaczej 0."
+  ZamowieniePubliczne:
+    numer_bzp:
+      type: string
+      validator: bzp
+      desc: "Numer ogłoszenia w Biuletynie Zamówień Publicznych, np. '2025/BZP 00270698'. Nie numer TED."
+    numer_postepowania:
+      type: string
+      validator: text
+      verify_in_text: true
+      desc: "Numer referencyjny postępowania nadany przez Zamawiającego, np. 'ZP.039.2025', 'RZP.27.29.2025.KD'."
+    numer_ted:
+      type: string
+      validator: ted
+      desc: "Numer ogłoszenia w Dzienniku Urzędowym UE (TED), np. '363730-2025' lub '2025/S 123-363730'."
+    tytul:
+      type: string
+      validator: text
+      verify_in_text: true
+      desc: "Tytuł (nazwa) zamówienia, zwykle w cudzysłowie po słowach 'pn.' lub 'przedmiotem jest'."

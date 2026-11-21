@@ -1,0 +1,47 @@
+name: przelew
+description: >-
+  Potwierdzenie przelewu bankowego (np. wpis od odwołania, opłata skarbowa od pełnomocnictwa).
+pages: 1
+classify:
+  title: ["potwierdzenie", "przelew"]
+  keywords:
+    "potwierdzenie": 2
+    "przelew": 3
+    "rachunek": 1
+    "rachunku": 1
+    "kwota": 2
+    "tytuł": 1
+    "data operacji": 3
+    "nadawca": 1
+    "odbiorca": 1
+  negative:
+    "wnoszę odwołanie": 4
+    "udzielam pełnomocnictwa": 4
+output:
+  przelew_bankowy:
+    data_operacji:
+      type: string
+      validator: date
+      desc: "Data wykonania operacji/przelewu, YYYY-MM-DD."
+    kwota:
+      type: number
+      validator: amount
+      desc: "Kwota przelewu jako liczba, np. 10000.00."
+    na_rachunek:
+      type: string
+      validator: nrb
+      desc: "Numer rachunku odbiorcy (26 cyfr, bez spacji i bez 'PL')."
+    numer_transakcji:
+      type: string
+      validator: text
+      verify_in_text: true
+      desc: "Numer/identyfikator transakcji lub referencja operacji, jeśli podany."
+    tytul:
+      type: string
+      validator: text
+      verify_in_text: true
+      desc: "Tytuł przelewu przepisany dokładnie."
+    z_rachunku:
+      type: string
+      validator: nrb
+      desc: "Numer rachunku nadawcy (26 cyfr, bez spacji i bez 'PL')."
