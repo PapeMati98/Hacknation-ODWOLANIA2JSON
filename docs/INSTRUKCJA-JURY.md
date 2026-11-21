@@ -1,14 +1,14 @@
 # ODWOŁANIA2JSON. Uruchomienie dla jury UZP
 
-**Drużyna „NIe wiem, ale wygeneruje”.** Aplikacja obsługuje elektroniczne PDF-y i skany. Do ekstrakcji używa Synaps-PL Small 4B, polskiego modelu językowego z rodziny Synaps opracowanego przez Synaptivo. **Stan na 21 listopada.** Działa lokalna usługa testowa. Zewnętrzny dostęp jury będzie możliwy po uruchomieniu konkursowego API i przekazaniu danych dostępowych. Komputer osoby oceniającej potrzebuje systemu Windows, Pythona 3.13 lub nowszego i dostępu do usługi modelu. Pierwsze uruchomienie pobiera zależności. [Publiczna karta modelu](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B)
+**Drużyna „NIe wiem, ale wygeneruje”.** Aplikacja obsługuje elektroniczne PDF-y i skany. Do ekstrakcji używa Synaps-PL Small 4B, polskiego modelu językowego z rodziny Synaps opracowanego przez Synaptivo. **Stan na 21 listopada.** Konkursowe API przeszło próbę przez publiczny adres z kluczem jury. W próbie aplikacja obsłużyła 30 publicznych skanów UZP w 2 min 44 s. Komputer osoby oceniającej potrzebuje systemu Windows, Pythona 3.13 lub nowszego i dostępu do usługi modelu. Pierwsze uruchomienie pobiera zależności. [Publiczna karta modelu](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B)
 
 ## Dostęp do modelu
 
-Po uruchomieniu usługi zespół przekaże jury adres firmowej usługi i identyfikator modelu. Klucz do testów jury otrzyma w formularzu zgłoszeniowym. W PowerShell, w katalogu zawierającym `start_ui.bat` i `requirements.txt`, ustaw przekazane wartości. Pole klucza ukrywa wpisywane znaki. Ustawienia dotyczą bieżącej konsoli i uruchamianych z niej procesów.
+Adres API to `https://api.synaptivo.eu/v1`, a identyfikator modelu to `Synaptivo/Synaps-PL-Small-4B`. Klucz do testów zespół przekazuje jury w formularzu zgłoszeniowym. W PowerShell otwórz katalog zawierający `start_ui.bat` i `requirements.txt`, wykonaj poniższe polecenia i wpisz klucz w ukrytym polu. Ustawienia dotyczą bieżącej konsoli i uruchamianych z niej procesów.
 
 ```powershell
-$env:O2J_API_BASE = Read-Host 'Adres usługi LLM przekazany przez zespół, łącznie z /v1'
-$env:O2J_API_MODEL = Read-Host 'Identyfikator modelu podany przez zespół'
+$env:O2J_API_BASE = 'https://api.synaptivo.eu/v1'
+$env:O2J_API_MODEL = 'Synaptivo/Synaps-PL-Small-4B'
 $env:O2J_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'Klucz jury' -AsSecureString)).Password
 ```
 

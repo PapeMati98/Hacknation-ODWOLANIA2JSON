@@ -1,6 +1,6 @@
 # Polityka prywatności konkursowego API Synaps
 
-**Projekt do zatwierdzenia przez Synaptivo sp. z o.o. · 21 listopada 2026 r.** Dotyczy wersji projektu ODWOŁANIA2JSON dla Urzędu Zamówień Publicznych podczas HackNation 2026. Działa serwer testowy. Dostęp dla jury jest w przygotowaniu. Pola w nawiasach kwadratowych wymagają uzupełnienia przed publikacją.
+**Mateusz zatwierdził projekt polityki 21 listopada 2026 r.** Akceptacja dotyczy [przedstawionej wersji 0e428bb](https://github.com/PapeMati98/Hacknation-ODWOLANIA2JSON/blob/0e428bb4c27d4ca0f2a162f1ab073880801565b2/docs/POLITYKA-PRYWATNOSCI-API-SYNAPS.md). Poniżej odnotowano także wynik uruchomienia API dla jury HackNation 2026. Pola w nawiasach kwadratowych wskazują dane potrzebne do publikacji obowiązującej polityki.
 
 ## Kto świadczy usługę i w jakim celu
 
@@ -20,7 +20,7 @@ Dane o osobach wymienionych w aktach pochodzą z plików przekazanych przez ocen
 
 ## Gdzie przetwarzamy dane i kto ma do nich dostęp
 
-W konfiguracji testowej model działa na serwerze Synaptivo w **Polsce**, a OCR na komputerze oceniającego. Dla dostępu jury zespół planuje użyć usługi Cloudflare Tunnel przed serwerem Synaptivo. W proponowanej konfiguracji połączenie z aplikacji jest odszyfrowywane w warstwie Cloudflare, która może wówczas przetwarzać treść żądania i odpowiedzi. Region odszyfrowania i miejsca przechowywania logów wersji konkursowej czekają na weryfikację. Warunkiem UZP są serwery usługi w UE/EOG. Odbiorcami wyników są upoważnieni oceniający.
+Model działa na serwerze Synaptivo w **Polsce**. OCR odbywa się na komputerze oceniającego. Połączenie z aplikacji przechodzi przez Cloudflare Tunnel do bramy Synaptivo, która sprawdza klucz i kieruje żądanie do modelu. Cloudflare odszyfrowuje połączenie i może przetwarzać treść żądania oraz odpowiedzi. Region odszyfrowania i miejsca przechowywania logów dla konkursowej nazwy hosta czekają na potwierdzenie. Warunkiem UZP są serwery usługi w UE/EOG. Odbiorcami wyników są upoważnieni oceniający.
 
 **[Claude — wersja dla jury: kraj serwera modelu, nazwa operatora i kraj, w którym brama lub tunel odszyfrowuje żądania. Podać również dostawców i kraje logów, monitoringu, kopii oraz dostępu serwisowego, zakres widocznych dla nich danych i krąg uprawnionych osób. Jeśli spółka nie korzysta z pośrednika na danym etapie, wpisać to po sprawdzeniu.]**
 
@@ -36,7 +36,7 @@ Serwer używa pamięci operacyjnej do wygenerowania odpowiedzi. Okres przetwarza
 | Metadane dostępu i błędów | **[Claude — wskazać okres lub kryterium retencji dla serwera, bramy i monitoringu oraz sposób usunięcia. Opisać również zachowanie przy błędnym żądaniu.]** |
 | Kopie zapasowe i dane po zakończeniu oceny | **[Claude — określić, co wchodzi do kopii, gdzie są przechowywane i kiedy wygasają. Podać sposób zakończenia dostępu jury i usunięcia albo zwrotu powierzonych danych.]** |
 
-Projekt polityki przewiduje wykorzystanie treści dokumentów i odpowiedzi wyłącznie do wykonania żądań konkursowych. Wyklucza ich użycie do treningu, dostrajania, budowy zbiorów oraz ulepszania modeli przez Synaptivo i jego usługodawców. **[Claude — potwierdzić ustawienia serwera i usług pośrednich, w tym telemetrię, przed przyjęciem tej deklaracji.]**
+Zaakceptowana przez Mateusza zasada przewiduje wykorzystanie treści dokumentów i odpowiedzi wyłącznie do wykonania żądań konkursowych. Wyklucza ich użycie do treningu, dostrajania, budowy zbiorów oraz ulepszania modeli przez Synaptivo i jego usługodawców. **[Claude — potwierdzić ustawienia serwera i usług pośrednich, w tym telemetrię, dla potwierdzenia wykonania tej zasady.]**
 
 **[Claude — potwierdzić szyfrowanie połączenia jury z usługą i połączenia bramy z serwerem, kontrolę dostępu kluczem oraz ograniczenie dostępu personelu. Podać wyłącznie potwierdzone środki ochrony.]**
 
@@ -54,7 +54,9 @@ Osoba, której dane dotyczą, może zwrócić się do właściwego administrator
 
 ## Do potwierdzenia przez Claude po uruchomieniu API
 
-To karta robocza zespołu. W sprawdzonym dzienniku serwera testowego Claude zaobserwował adres i status odpowiedzi, bez tekstu dokumentu. Wersja dostępna jury wymaga odrębnej próby na dokumencie syntetycznym. Do każdego punktu zapisać wynik, datę, wersję wdrożenia i dowód bez kluczy, treści akt ani nagłówków autoryzacji.
+**Stan po uruchomieniu 21 listopada.** Claude potwierdził połączenie z `https://api.synaptivo.eu/v1` z innej maszyny przez Cloudflare, bramę Synaptivo i serwer modelu w Polsce. Klucz jury umożliwił wykonanie żądań. Bez klucza brama zwracała HTTP 401. W próbie z publicznymi materiałami UZP 747 wywołań modelu zakończyło się bez błędów. Wcześniejsza obserwacja logu samego serwera dotyczyła adresu i statusu odpowiedzi. Region Cloudflare, retencja w całej usłudze, ustawienia dalszego użycia i procedura unieważnienia klucza pozostają do udokumentowania.
+
+Do pozostałych prób użyć dokumentu syntetycznego. Zachować wynik, datę, wersję wdrożenia i dowód bez kluczy, treści akt ani nagłówków autoryzacji.
 
 | Co potwierdzić | Jakiego dowodu potrzebuje spółka |
 |---|---|
@@ -62,6 +64,6 @@ To karta robocza zespołu. W sprawdzonym dzienniku serwera testowego Claude zaob
 | 2. Kraje, podmioty i dostęp | Dla nazwy hosta udostępnionej jury wskazać operatora, kraje lub wiążące ograniczenie regionalne, zakres danych i dostęp serwisowy w każdym miejscu przetwarzania. Przy Cloudflare osobno potwierdzić region zakończenia szyfrowania TLS dla żądań HTTPS oraz lokalizację logów, również ich eksportów. Dołączyć ustawienia zastosowane dla tej usługi i warunki dostawcy. Pojedyncze połączenie przez węzeł w Polsce nie dowodzi ograniczenia wszystkich żądań do UE/EOG. [Cloudflare o regionalizacji HTTPS](https://developers.cloudflare.com/data-localization/regional-services/) · [Cloudflare o lokalizacji logów](https://developers.cloudflare.com/data-localization/metadata-boundary/) |
 | 3. Zapisy, pamięć podręczna i usuwanie | Wysłać syntetyczne żądanie ze znacznikiem i wywołać zwykły błąd walidacji. Sprawdzić ustawienia i próbki logów modelu, bramy i monitoringu, zasady pamięci podręcznej oraz zakres kopii. Zapisać pola, precyzyjny czas lub kryterium retencji i sposób usunięcia dla każdej warstwy. |
 | 4. Dalsze użycie danych | Potwierdzić ustawienia i warunki operatorów dotyczące treningu, dostrajania, telemetrii, analizy treści i udostępniania żądań. Wskazać, czy dane opuszczają opisaną trasę. |
-| 5. Dostęp jury i jego zakończenie | Z komputera spoza środowiska testowego sprawdzić właściwy adres HTTPS, prawidłowy certyfikat, odmowę bez klucza i odpowiedź Synapsa z kluczem. Potwierdzić ochronę połączenia z serwerem, sposób odwołania klucza i osobę obsługującą incydenty. Zachować datę i kody odpowiedzi. |
+| 5. Dostęp jury i jego zakończenie | **Potwierdzone przez Claude:** udane połączenie HTTPS spoza stacji modelu, odpowiedź z kluczem i odmowa HTTP 401 bez klucza. Uzupełnić dowód ochrony odcinka brama–model, sposób odwołania klucza i osobę obsługującą incydenty. |
 
-**Decyzja Synaptivo przed publikacją.** Na podstawie wyników spółka akceptuje role, podstawy prawne, kontakt, ewentualnych podwykonawców i transfery. Jeśli lokalizacja serwera obsługującego dane konkursowe pozostaje nieznana lub wypada poza UE/EOG, spółka uzgadnia odpowiednią konfigurację przed dopuszczeniem ruchu jury. Po weryfikacji uzupełnia pola robocze i publikuje zatwierdzony tekst do końca sekcji „Odpowiedzialność i prawa osób”. Jury otrzymuje adres obowiązującej polityki. UZP wymaga firmowego dostawcy, wskazania zakresu i miejsca przetwarzania w jego polityce, serwerów w UE/EOG oraz klucza testowego. [Wymagania UZP, część 6](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/0b360a9da4b482a6a280696df6714404e0953505/README.md?plain=1#L160) · [RODO, w szczególności art. 5–6, 12–14, 15–22, 28, 32 i 44–49](https://eur-lex.europa.eu/legal-content/PL/TXT/?uri=CELEX:32016R0679)
+**Przed publikacją.** Mateusz zaakceptował treść projektu. Spółka uzupełnia rzeczywiste role i podstawy prawne, kontakt, dane dostawców i informacje o ewentualnych transferach na podstawie ustaleń z operatorem oraz stroną przekazującą dane. Jeśli lokalizacja serwera obsługującego dane konkursowe pozostaje nieznana lub wypada poza UE/EOG, spółka uzgadnia odpowiednią konfigurację przed dopuszczeniem ruchu jury. Po weryfikacji uzupełnia pola robocze i publikuje zatwierdzony tekst do końca sekcji „Odpowiedzialność i prawa osób”. Jury otrzymuje adres obowiązującej polityki. UZP wymaga firmowego dostawcy, wskazania zakresu i miejsca przetwarzania w jego polityce, serwerów w UE/EOG oraz klucza testowego. [Wymagania UZP, część 6](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/0b360a9da4b482a6a280696df6714404e0953505/README.md?plain=1#L160) · [RODO, w szczególności art. 5–6, 12–14, 15–22, 28, 32 i 44–49](https://eur-lex.europa.eu/legal-content/PL/TXT/?uri=CELEX:32016R0679)

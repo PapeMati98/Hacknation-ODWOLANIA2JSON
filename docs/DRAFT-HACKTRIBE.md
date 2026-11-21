@@ -18,11 +18,11 @@ Zamieniamy dokumenty sprawy przed Krajową Izbą Odwoławczą w dane dla systemu
 
 ### Przyjęte podejście
 
-Z dokumentów elektronicznych pobieramy tekst, a skany odczytujemy za pomocą OCR. Plik YAML określa, jak rozpoznać klasę i jakich pól w niej szukać. Pola odczytuje Synaps-PL Small 4B, polski model językowy z rodziny Synaps. Synaptivo dostroiło go na polskich zadaniach i udostępnia jego wagi na licencji Apache 2.0. W próbach aplikacja korzystała z lokalnego API modelu. Konkursowe API dla jury jest planowane. Aplikacja sprawdza odczytane pola względem treści dokumentu, porównuje dane pomiędzy pismami tej samej sprawy i oznacza rozbieżności. Użytkownik może przejrzeć źródło każdego pola i dodać klasę w edytorze YAML.
+Z dokumentów elektronicznych pobieramy tekst, a skany odczytujemy za pomocą OCR. Plik YAML określa, jak rozpoznać klasę i jakich pól w niej szukać. Pola odczytuje Synaps-PL Small 4B, polski model językowy z rodziny Synaps. Synaptivo dostroiło go na polskich zadaniach i udostępnia jego wagi na licencji Apache 2.0. Aplikacja korzysta z działającego firmowego API Synaptivo. Jury otrzyma klucz w formularzu zgłoszeniowym. Aplikacja sprawdza odczytane pola względem treści dokumentu, porównuje dane pomiędzy pismami tej samej sprawy i oznacza rozbieżności. Użytkownik może przejrzeć źródło każdego pola i dodać klasę w edytorze YAML.
 
 ### Dotychczasowe postępy
 
-Działają trzy klasy dokumentów UZP. W próbie zespołu `api-s1-v5` Synaps przetworzył 30 publicznych skanów UZP w 3 min 03 s. F1 wyniósł 0,9935, a przy dokładnej zgodności wartości 0,9769. Interfejs pozwala pobrać JSON dokumentu i ZIP sprawy. W osobnej próbie dodaliśmy czwartą klasę przez YAML i poprawnie odczytaliśmy numer oraz datę protokołu przekazania. Jury oceni rozwiązanie na 150 nieujawnionych PDF-ach, z limitem 45 minut.
+Działają trzy klasy dokumentów UZP. W próbie zespołu `api-s1-v5` Synaps przetworzył 30 publicznych skanów UZP w 3 min 03 s. F1 wyniósł 0,9935, a przy dokładnej zgodności wartości 0,9769. W oddzielnej próbie przez publiczne API te same 30 skanów przetworzono w 2 min 44 s z F1 0,9935. Interfejs pozwala pobrać JSON dokumentu i ZIP sprawy. W osobnej próbie dodaliśmy czwartą klasę przez YAML i poprawnie odczytaliśmy numer oraz datę protokołu przekazania. Jury oceni rozwiązanie na 150 nieujawnionych PDF-ach, z limitem 45 minut.
 
 ### Przy zapisie projektu
 
