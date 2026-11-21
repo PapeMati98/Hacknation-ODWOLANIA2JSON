@@ -1,0 +1,9 @@
+{
+  "rodzaj": "tekst",
+  "poziom": "zwykła",
+  "powod_id": 2,
+  "cechy": {
+    "ted": true
+  },
+  "dokumenty_spoza_klas": []
+}

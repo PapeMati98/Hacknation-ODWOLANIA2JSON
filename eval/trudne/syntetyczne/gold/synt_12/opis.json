@@ -1,0 +1,16 @@
+{
+  "rodzaj": "skan",
+  "poziom": "trudna",
+  "powod_id": 8,
+  "cechy": {
+    "skan": true,
+    "osoba_fizyczna": true,
+    "data_na_koncu": true,
+    "zarzut_na_2_stronie": true,
+    "pesel": true,
+    "bez_numeru_transakcji": true,
+    "nip_myslniki": true,
+    "pieczatka": true
+  },
+  "dokumenty_spoza_klas": []
+}

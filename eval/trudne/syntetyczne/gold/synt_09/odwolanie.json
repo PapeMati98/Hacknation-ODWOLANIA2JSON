@@ -1,0 +1,38 @@
+{
+  "OdwolanieKIO": {
+    "data": "2026-04-24",
+    "czynnosc_dzien": "2026-04-14",
+    "czynnosc_powod_id": 9,
+    "czynnosc_opis": "Decyzja o unieważnieniu postępowania",
+    "miejscowosc": "Poznań"
+  },
+  "Odwolujacy": [
+    {
+      "krs": "9994795896",
+      "nazwa": "Kerbud Technologie S.A.",
+      "nip": "9993082024",
+      "regon": "999135226",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Krzysztof Pawlak",
+        "nazwa": "Kancelaria Radcy Prawnego Krzysztof Pawlak",
+        "mail": "biuro@pawlak-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": "9992715230",
+      "nazwa": "Uniwersytet Przyrodniczy w Lublinie",
+      "nip": "9999504756",
+      "regon": "999263786",
+      "prowadzacy_postepowanie": null
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": "2026/BZP00118696",
+    "numer_postepowania": "SZP-60/2026",
+    "numer_ted": null,
+    "tytul": "Odbiór i zagospodarowanie odpadów komunalnych z terenu gminy"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "rodzaj": "tekst",
+  "poziom": "trudna",
+  "powod_id": 11,
+  "cechy": {
+    "tabela": true,
+    "nip_myslniki": true,
+    "bzp_spacja": true,
+    "bzp_korekta": true,
+    "osoba_fizyczna": true,
+    "kwota_pln": true,
+    "rachunek_spacje": true,
+    "zam_bez_krs": true,
+    "negatyw": "faktura",
+    "kio": 0
+  },
+  "dokumenty_spoza_klas": [
+    "faktura_kancelarii",
+    "postanowienie_kio"
+  ]
+}

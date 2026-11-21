@@ -1,0 +1,38 @@
+{
+  "OdwolanieKIO": {
+    "data": "2026-09-15",
+    "czynnosc_dzien": "2026-09-05",
+    "czynnosc_powod_id": 4,
+    "czynnosc_opis": "Publikacja specyfikacji warunków zamówienia (SWZ)",
+    "miejscowosc": "Wrocław"
+  },
+  "Odwolujacy": [
+    {
+      "krs": "9995428835",
+      "nazwa": "Wikomed Infrastruktura S.A.",
+      "nip": "9998415200",
+      "regon": "999410394",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Robert Mazurek",
+        "nazwa": "Kancelaria Radcy Prawnego Robert Mazurek",
+        "mail": "biuro@mazurek-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": "9993317909",
+      "nazwa": "Miejskie Przedsiębiorstwo Wodociągów i Kanalizacji w Pile Sp. z o.o.",
+      "nip": "9996784614",
+      "regon": "999916484",
+      "prowadzacy_postepowanie": null
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": null,
+    "numer_postepowania": "DZP/138/26",
+    "numer_ted": "848625-2026",
+    "tytul": "Dostawa leków onkologicznych w podziale na 9 pakietów"
+  }
+}

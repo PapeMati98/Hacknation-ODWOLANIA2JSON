@@ -1,0 +1,38 @@
+{
+  "OdwolanieKIO": {
+    "data": "2026-06-10",
+    "czynnosc_dzien": "2026-06-03",
+    "czynnosc_powod_id": 1,
+    "czynnosc_opis": "Decyzja o odrzuceniu oferty",
+    "miejscowosc": "Łódź"
+  },
+  "Odwolujacy": [
+    {
+      "krs": "9997954034",
+      "nazwa": "Velstor Energia sp.k.",
+      "nip": "9995023669",
+      "regon": "999497484",
+      "przez-pelnomocnika": 1,
+      "pelnomocnik": {
+        "imie_nazwisko": "Anna Kowalska",
+        "nazwa": "Kancelaria Adwokacka Lex Publica sp.p.",
+        "mail": "biuro@kowalska-kancelaria.example"
+      }
+    }
+  ],
+  "Zamawiajacy": [
+    {
+      "krs": "9997467375",
+      "nazwa": "Gmina Miasto Ostrołęka",
+      "nip": "9997737114",
+      "regon": "999787035",
+      "prowadzacy_postepowanie": null
+    }
+  ],
+  "ZamowieniePubliczne": {
+    "numer_bzp": "2026/BZP00452563",
+    "numer_postepowania": "ZP.271.98.2026",
+    "numer_ted": null,
+    "tytul": "Świadczenie usług kompleksowego sprzątania obiektów w latach 2027–2029"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "rodzaj": "skan",
+  "poziom": "trudna",
+  "powod_id": 10,
+  "cechy": {
+    "skan": true,
+    "dwoch_zamawiajacych": true,
+    "ted": true,
+    "tabela": true,
+    "times": true,
+    "negatyw": "odpowiedz",
+    "kwota_pln": true
+  },
+  "dokumenty_spoza_klas": [
+    "odpowiedz_na_odwolanie"
+  ]
+}
