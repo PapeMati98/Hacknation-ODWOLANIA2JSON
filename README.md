@@ -2,8 +2,8 @@
 
 Rozwiązanie zadania **Odwołania2json** (Urząd Zamówień Publicznych, HackNation 2026): zamienia dokumenty PDF sprawy odwoławczej KIO — odwołanie, pełnomocnictwo, potwierdzenie przelewu — na pliki JSON zgodne ze schematem organizatora.
 
-- Działa **lokalnie na CPU, bez GPU, bez internetu i bez klucza API** — na laptopie biurowym z 16 GB RAM. Żaden dokument nie opuszcza komputera. Wyłącznie komponenty open source (Apache-2.0 / MIT / BSD).
-- Mały model językowy: **4 mld parametrów** (Qwen3.5-4B), patrz „Użyty model językowy”.
+- Aplikacja działa lokalnie bez GPU. Wariant konkursowy odczytuje pola przy użyciu **Synaps-PL Small 4B**, polskiego modelu językowego z rodziny Synaps opracowanego przez Synaptivo. [Publiczny model i licencja Apache 2.0](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B)
+- Drużyna **„NIe wiem, ale wygeneruje”** przetestowała cały proces z lokalną usługą Synapsa. Na 30 publicznych skanach UZP uzyskała F1 0,9935 w 3 min 03 s. **Stan z 21 listopada: API przeznaczone dla jury czeka na uruchomienie.** [Instrukcja jury](./docs/INSTRUKCJA-JURY.md) · [Ustalenia UZP](./docs/USTALENIA-UZP.md)
 - Obsługuje PDF-y z warstwą tekstową i **skany** (OCR).
 - Typ dokumentu jest rozpoznawany **po treści**, nigdy po nazwie pliku. Dokument spoza obsługiwanych klas (np. ogłoszenie, wyrok KIO, SWZ) dostaje **pusty plik JSON** (`{}`).
 - Nową klasę dokumentu dodaje się **jednym plikiem YAML, bez zmian w kodzie**.
@@ -13,9 +13,11 @@ Rozwiązanie zadania **Odwołania2json** (Urząd Zamówień Publicznych, HackNat
 
 ### Przykład dla jury
 
-W Windows uruchom `start_ui.bat` i otwórz `http://127.0.0.1:8080`. Wgraj plik `przelew.pdf` ze sprawy `przyklad_02`, uruchom ekstrakcję i pobierz `przelew.json`. Sześć pól można porównać z plikiem o tej samej nazwie u organizatora. Przycisk „Pobierz ZIP sprawy” pobiera wszystkie wyniki. [Przykład i wzorzec UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/tree/84cc976f0a9af5cee14f131c795f929134ca0fda/dane/przyklad_02) · [Prezentacja projektu](./docs/Odwolania2JSON-prezentacja.pdf) · [Treść zgłoszenia HackTribe](./docs/DRAFT-HACKTRIBE.md)
+Po otrzymaniu adresu usługi, nazwy modelu i klucza ustaw zmienne zgodnie z [instrukcją jury](./docs/INSTRUKCJA-JURY.md). W PowerShell uruchom `.\start_ui.bat` i otwórz `http://127.0.0.1:8080`. Wgraj plik `przelew.pdf` ze sprawy `przyklad_02`, uruchom ekstrakcję i pobierz `przelew.json`. Sześć pól można porównać z plikiem o tej samej nazwie u organizatora. Przycisk „Pobierz ZIP sprawy” pobiera wszystkie wyniki. [Przykład i wzorzec UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/tree/0b360a9da4b482a6a280696df6714404e0953505/dane/przyklad_02) · [Prezentacja projektu](./docs/Odwolania2JSON-prezentacja.pdf) · [Treść zgłoszenia HackTribe](./docs/DRAFT-HACKTRIBE.md)
 
-Wymagania: Windows lub Linux, Python 3.13+, ok. 5 GB wolnego RAM (zmierzone zużycie: 4,6 GB), ok. 3,5 GB na dysku (model). GPU, internet (po pobraniu modelu) i klucz API nie są potrzebne.
+### Wariant lokalny z Qwenem
+
+W tym wariancie wymagania to Windows lub Linux, Python 3.13+, ok. 5 GB wolnego RAM (zmierzone zużycie: 4,6 GB), ok. 3,5 GB na dysku (model). GPU, internet (po pobraniu modelu) i klucz API nie są potrzebne.
 
 ```bat
 start.bat
@@ -42,7 +44,7 @@ Kontener `odwolania2json` czyta `./input`, zapisuje do `./output` i `./trace`, a
 
 ### Interfejs webowy (prototyp — upload PDF + podgląd JSON/śladu/YAML)
 
-Aplikacja udostępnia lokalny interfejs webowy (zero dodatkowych zależności poza biblioteką standardową Pythona 3.13, 100% offline — bez CDN) działający na porcie `8080`:
+Interfejs w przeglądarce działa pod adresem lokalnym, korzysta z dołączonych zasobów i obsługuje wywołania modelu zgodnie z wybranym trybem pracy. Domyślny port to `8080`.
 
 ```bat
 start_ui.bat
@@ -118,23 +120,23 @@ Plik JSON ma tę samą nazwę co PDF i leży w podfolderze tej samej sprawy. Dla
 | `--ocr-checksum` / `O2J_OCR_CHECKSUM` | numer ze skanu ze złą sumą kontrolną: `confidence` = zostaje z ostrzeżeniem przy wysokiej pewności odczytu, inaczej `null`; `strict` = zawsze `null` | `confidence` |
 | `--resume` | pomija dokumenty, które mają już wynik w `output` — wznowienie przerwanego przebiegu | wyłączone |
 | `--visual-reader` / `O2J_VISUAL_READER`, `--mmproj` | czytelnik wizualny: drugi odczyt wycinków linii skanu tym samym modelem z projektorem obrazu (`python tools/download_models.py --vision`, 672 MB) | `off` |
-| `O2J_API_BASE`, `O2J_API_MODEL`, `O2J_API_KEY` | opcja dodatkowa: model serwowany przez API zgodne z OpenAI zamiast lokalnego (patrz „Tryb lokalny a API”) | — |
+| `O2J_API_BASE`, `O2J_API_MODEL`, `O2J_API_KEY` | adres, identyfikator i klucz do usługi Synaps w wariancie konkursowym | wartości przekazywane do oceny osobno |
 
 ### Czas działania i przerwany przebieg
-Na 12-rdzeniowym CPU sprawa (odwołanie + pełnomocnictwo + przelew) zajmuje około 2 minut dla PDF-ów tekstowych; skan dodaje około minuty na OCR dokumentu. Program wypisuje postęp i szacowany pozostały czas. Wynik każdego dokumentu jest zapisywany od razu po jego przetworzeniu, więc przerwanie nie niszczy gotowych plików, a `--resume` kończy przebieg od miejsca przerwania.
+W próbie `api-s1-v5` proces z Synapsem na 30 skanach zajął 183 s. W starszym trybie lokalnym z Qwenem na 12-rdzeniowym CPU sprawa (odwołanie + pełnomocnictwo + przelew) zajmuje około 2 minut dla PDF-ów tekstowych; skan dodaje około minuty na OCR dokumentu. Program wypisuje postęp i szacowany pozostały czas. Wynik każdego dokumentu jest zapisywany od razu po jego przetworzeniu, więc przerwanie nie niszczy gotowych plików, a `--resume` kończy przebieg od miejsca przerwania.
 
 ### Tryb lokalny a API
-Rozwiązaniem ocenianym jest **tryb lokalny** (model na CPU): tylko w nim działa prowadzone wypełnianie formularza i tylko dla niego podajemy wyniki F1. Zmienna `O2J_API_BASE` pozwala podmienić model na otwarty model serwowany osobno; odpowiedź przechodzi wtedy tę samą weryfikację i kontrolę krzyżową, ale ten tryb **nie był mierzony** i nie jest potrzebny do uruchomienia.
+W wariancie konkursowym aplikacja korzysta z otwartych wag Synaps-PL Small 4B przez API. Przetestowany identyfikator lokalnego serwera modelu to `synaps-pl-4b-s1`. Adres usługi i identyfikator używany przez jury należy wziąć z końcowej instrukcji dostępowej. Bez skonfigurowanego API aplikacja może korzystać z lokalnego Qwena GGUF. [Pomiar wariantu Synaps](./docs/USTALENIA-UZP.md)
 
 ## Użyty model językowy
 
 | | |
 |---|---|
-| Model | **Qwen3.5-4B** (Alibaba, licencja Apache-2.0), 4 mld parametrów |
-| Postać | plik GGUF, kwantyzacja Q4_K_M, 2,7 GB; uruchamiany przez llama.cpp na CPU |
-| Gdzie działa | lokalnie, w procesie programu; bez serwera, bez API, bez klucza |
+| Model konkursowy | [Synaps-PL Small 4B](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B), rodzina Synaps, Synaptivo. Wydanie S1 powstało przez dostrojenie Qwen3.5-4B na polskich zadaniach. Licencja Apache 2.0. |
+| Postać | publiczne wagi Synaps w dwóch plikach safetensors, rewizja `67e30d0` |
+| Wykonanie | aplikacja lokalna, ekstrakcja przez API modelu. Zespół zweryfikował lokalny serwer testowy. |
 | Ustawienia | temperatura 0 (wynik powtarzalny), tryb rozumowania wyłączony |
-| Pamięć | 4,6 GB łącznie z OCR (zmierzone) |
+| Wariant lokalny z Qwenem | Q4_K_M GGUF, 2,7 GB na dysku. Zmierzono 4,6 GB pamięci z OCR dla tego wariantu. |
 
 Model ma wąską rolę: czyta tekst dokumentu i wpisuje wartości do formularza `klucz: wartość`. Nie rozpoznaje typu dokumentu, nie buduje JSON-a i nie liczy pól słownikowych — to robi kod na podstawie YAML. Każdą wartość z modelu sprawdza kod (sumy kontrolne, obecność w dokumencie, miejsce w dokumencie, drugi odczyt skanu); wartość, która nie przechodzi kontroli, nie trafia do wyniku. Dzięki temu wystarcza mały model, a wymiana na inny plik GGUF to jeden parametr (`--model`).
 
@@ -153,7 +155,7 @@ PDF ──► pdfio ──► classify ──► extract (LLM) ──► walidac
 | `odwolania2json/vision.py` | Opcjonalny czytelnik wizualny: drugi, niezależny odczyt wycinka linii; tylko potwierdza albo wetuje wartość z OCR. |
 | `odwolania2json/config.py` | Wczytuje klasy dokumentów z YAML; buduje z nich formularz i opis pól dla modelu. |
 | `odwolania2json/extract.py` | Klasyfikacja (słowa kluczowe i tytuł z YAML, próg odrzucenia) oraz ekstrakcja: model wypełnia zwięzły formularz `klucz: wartość`, kod zamienia go na JSON i weryfikuje każde pole. |
-| `odwolania2json/llm.py` | Model językowy: lokalnie przez llama.cpp (Qwen3.5-4B, Apache-2.0) albo przez API zgodne z OpenAI. |
+| `odwolania2json/llm.py` | Ekstrakcja przez API Synapsa i obsługa lokalnego wariantu z Qwenem GGUF. |
 | `odwolania2json/validators.py` | Sumy kontrolne NIP / REGON / PESEL / NRB, format KRS, daty, numery BZP i TED, kwoty, e-mail, nazwiska bez tytułów; naprawa typowych pomyłek OCR o jeden znak. |
 | `odwolania2json/textmatch.py` | Sprawdza, czy wartość faktycznie występuje w dokumencie; zastępuje niedokładnie przepisaną wartość dosłownym fragmentem tekstu, dociąga niepełne numery, porównuje dwa odczyty OCR. |
 | `odwolania2json/crosscheck.py` | Kontrola krzyżowa: ten sam numer w kilku polach, zgodność między dokumentami sprawy, lista pozycji do sprawdzenia. |
@@ -279,7 +281,8 @@ python tools/score.py --manifest eval/manifest.json --pred eval/out --split dev
 
 | Komponent | Licencja | Zastosowanie |
 |---|---|---|
-| Qwen3.5-4B (GGUF, kwantyzacja unsloth) | Apache-2.0 | model językowy; opcjonalnie jego projektor obrazu `mmproj-F16.gguf` (czytelnik wizualny) |
+| [Synaps-PL Small 4B](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B) | Apache-2.0 | polski model z rodziny Synaps opracowany przez Synaptivo na bazie Qwen3.5-4B, ekstrakcja konkursowa |
+| Qwen3.5-4B (GGUF, kwantyzacja unsloth) | Apache-2.0 | alternatywny wariant lokalny; opcjonalnie jego projektor obrazu `mmproj-F16.gguf` (czytelnik wizualny) |
 | llama.cpp / llama-cpp-python | MIT | uruchamianie modelu na CPU |
 | RapidOCR + modele PP-OCR | Apache-2.0 | OCR |
 | ONNX Runtime | MIT | silnik OCR |
