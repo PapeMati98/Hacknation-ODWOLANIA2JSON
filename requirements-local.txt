@@ -1,0 +1,6 @@
+# Model jezykowy lokalnie (llama.cpp, CPU) - potrzebny tylko bez API.
+# Gotowe kola sa w indeksie ponizej; wersja przypieta, bo nowsza na PyPI ma tylko zrodla (wymaga kompilatora C++).
+-r requirements.txt
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+--prefer-binary
+llama-cpp-python==0.3.36

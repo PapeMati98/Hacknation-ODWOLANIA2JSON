@@ -11,8 +11,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+COPY requirements.txt requirements-local.txt ./
+RUN pip install -r requirements-local.txt
 
 # Modele OCR (PP-OCR ONNX) pobierane podczas budowania - kontener nie potrzebuje ich potem z sieci.
 RUN python -c "from rapidocr import RapidOCR; RapidOCR()"

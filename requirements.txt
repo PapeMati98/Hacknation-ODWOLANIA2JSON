@@ -1,11 +1,11 @@
-rapidocr>=3.4
-onnxruntime>=1.20
-opencv-python-headless>=4.10
-pypdfium2>=4.30
-pyyaml>=6.0
-jsonschema>=4.23
-numpy>=2.0
-pillow>=11.0
-huggingface_hub>=0.30
-# llama.cpp (CPU); gotowe koła: --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-llama-cpp-python>=0.3.36
+# Wersje przypiete do zestawu, na ktorym wykonano pomiary (21.11.2026; Python 3.13 na Windows, 3.14 na Linux).
+rapidocr==3.10.0
+onnxruntime==1.32.0
+opencv-python-headless==5.1.0.95
+pypdfium2==5.15.2
+pyyaml==6.0.4
+jsonschema==4.26.0
+numpy==2.5.5
+pillow==13.0.0
+huggingface_hub==2.4.0
+# Model jezykowy lokalnie (llama.cpp na CPU) jest opcjonalny: requirements-local.txt. Tryb API go nie potrzebuje.
