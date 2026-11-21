@@ -1,6 +1,6 @@
 # Zgłoszenie Odwołania2JSON w HackTribe
 
-**Treść do wklejenia do HackTribe, 21 listopada 2026.** Zapis karty projektu w panelu lidera czeka na potwierdzenie. Projekt i wybór zadania trzeba zapisać przed godz. 20.00 w sobotę 21 listopada. Termin na uzupełnienie całości upływa o godz. 11.00 w niedzielę 22 listopada czasu polskiego. [Panel projektów](https://hacknation2026.hacktribe.co/my/) · [Instrukcja zgłaszania projektów, s. 5–7](https://hacknation.pl/api/public/przewodnik/1f73a661-0852-4e9e-b3ed-58c93bce6456?asset=aa346c52-8bd9-44ac-9499-364e44c4b6b4)
+**Stan na 21 listopada 2026.** Karta projektu dla zadania UZP jest zapisana i zawiera link do repozytorium. Po zakończeniu prac nad kodem zespół dołączy prezentację PDF i zapisze komplet zgłoszenia. Termin upływa w niedzielę 22 listopada o godz. 11.00 czasu polskiego. [Panel projektów](https://hacknation2026.hacktribe.co/my/) · [Instrukcja zgłaszania projektów, s. 5–7](https://hacknation.pl/api/public/przewodnik/1f73a661-0852-4e9e-b3ed-58c93bce6456?asset=aa346c52-8bd9-44ac-9499-364e44c4b6b4)
 
 | Pole formularza | Wartość |
 |---|---|
@@ -28,4 +28,4 @@ Osoba zakładająca projekt staje się jego liderem. Przy dwóch zadaniach zespo
 
 ### Do niedzieli
 
-Lider uzupełnia skład, wkleja adres repozytorium z tabeli i dołącza prezentację. Po zapisaniu sprawdza, czy karta pokazuje właściwe zadanie i czy można otworzyć załącznik. Organizator zaleca demo do dwóch minut. [Prezentacja PDF](./Odwolania2JSON-prezentacja.pdf) · [Przewodnik uczestnika](https://hacknation.pl/przewodnik-uczestnika)
+Po zakończeniu prac lider sprawdza skład i zgodność opisu z oddawaną wersją prototypu, dołącza aktualną prezentację i zapisuje formularz. Następnie otwiera załącznik z karty projektu. Organizator zaleca demo do dwóch minut. [Prezentacja PDF](./Odwolania2JSON-prezentacja.pdf) · [Przewodnik uczestnika](https://hacknation.pl/przewodnik-uczestnika)
