@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
 import os
 import sys
 import time
@@ -123,6 +124,24 @@ def main(argv: list[str] | None = None) -> int:
     # Etap 1: wczytanie (tekst lub OCR) i klasyfikacja. Skany czyta kilka procesów naraz.
     workers = max(1, min(args.ocr_workers, len(todo) or 1))
     ocr_threads = max(1, (os.cpu_count() or 4) // workers) if workers > 1 else 0
+    # Bezpiecznik limitu czasu (ocena: 45 min na partię): po każdym wczytanym dokumencie prognoza, ile trwałaby
+    # reszta partii w trybie szybkim OCR. Gdy razem z czasem dotychczasowym dochodzi do O2J_TIME_BUDGET_S,
+    # pozostałe skany są czytane bez odczytów dodatkowych. Partia mieszcząca się w limicie - wynik bez zmian.
+    fast_event = multiprocessing.Event()
+    budget_s = float(os.environ.get("O2J_TIME_BUDGET_S", "2400") or 0)
+    read_count = 0
+
+    def watch_time() -> None:
+        nonlocal read_count
+        read_count += 1
+        if not budget_s or fast_event.is_set() or read_count < 3:
+            return
+        elapsed = time.perf_counter() - t_all
+        left = len(todo) - read_count
+        if elapsed + left * elapsed / read_count * FAST_SHARE >= budget_s:
+            fast_event.set()
+            print(f"Limit czasu {budget_s / 60:.0f} min: tryb szybki OCR dla pozostałych {left} dokumentów"
+                  f" (po {elapsed / 60:.1f} min)", flush=True)
     jobs = []
     api_pool = ThreadPoolExecutor(extractor.backend.parallel) if streaming else None
     pending: dict = {}                   # zadanie ekstrakcji -> jego argumenty (do ponowienia po błędzie API)
@@ -144,14 +163,17 @@ def main(argv: list[str] | None = None) -> int:
             jobs.append((cls_name, rel, doc, record))
 
     if workers == 1:
-        _init_reader(str(args.classes), 0)
+        _init_reader(str(args.classes), 0, fast_event)
         for pdf, rel in todo:
             classified(pdf, rel, *read_document(str(pdf)))
+            watch_time()
     else:
-        with ProcessPoolExecutor(workers, initializer=_init_reader, initargs=(str(args.classes), ocr_threads)) as readers:
+        with ProcessPoolExecutor(workers, initializer=_init_reader,
+                                 initargs=(str(args.classes), ocr_threads, fast_event)) as readers:
             reads = {readers.submit(read_document, str(pdf)): (pdf, rel) for pdf, rel in todo}
             for future in as_completed(reads):
                 classified(*reads[future], *future.result())
+                watch_time()
     waiting = len(pending) if streaming else len(jobs)
     print(f"Wczytano i sklasyfikowano w {time.perf_counter() - t_all:.0f} s (procesy OCR: {workers}); "
           f"do ekstrakcji: {waiting}", flush=True)
@@ -208,10 +230,15 @@ CLASSIFY_PAGES = 2          # tyle pierwszych stron wystarcza do rozpoznania kla
 _CLASSES: list = []
 
 
-def _init_reader(classes_dir: str, ocr_threads: int) -> None:
-    """Przygotowanie procesu czytającego dokumenty: klasy z YAML i liczba wątków silnika OCR."""
+FAST_SHARE = 0.55           # czas skanu w trybie szybkim OCR względem pełnego (profil 22.11: ~0,5, z zapasem)
+
+
+def _init_reader(classes_dir: str, ocr_threads: int, fast_event=None) -> None:
+    """Przygotowanie procesu czytającego dokumenty: klasy z YAML, liczba wątków silnika OCR i sygnał trybu
+    szybkiego (bezpiecznik limitu czasu)."""
     global _CLASSES
     pdfio.OCR_THREADS = ocr_threads
+    pdfio.FAST_EVENT = fast_event
     _CLASSES = load_classes(Path(classes_dir))
 
 

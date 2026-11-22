@@ -253,6 +253,14 @@ def _render(page, dpi: int, rotation: int = 0) -> np.ndarray:
 # z osobna niczego nie odzyskuje, a zajmuje kilkanaście sekund na stronę (limit czasu całej partii).
 MAX_LINE_REREADS = 12
 
+# Tryb szybki (multiprocessing.Event od cli): gdy partia nie zmieściłaby się w limicie czasu, pozostałe strony
+# są czytane bez odczytów dodatkowych (inne DPI, ponowne czytanie linii) - ok. połowa czasu skanu.
+FAST_EVENT = None
+
+
+def _fast() -> bool:
+    return FAST_EVENT is not None and FAST_EVENT.is_set()
+
 ROTATE_CONF = 0.88     # średnia pewność odczytu, poniżej której sprawdzamy, czy strona nie leży do góry nogami
 ROTATE_WIDE_CONF = 0.93    # ... albo średnia pewność najdłuższych linii strony (patrz _rotations_to_try)
 ROTATE_GAIN = 1.1      # o tyle lepszy musi być odczyt strony obróconej, żeby go przyjąć (strona prosta po
@@ -380,7 +388,8 @@ def ocr_page_rotated(page, all_reads: bool = False) -> tuple[list[Line], dict[in
         redactions = [straighten([(x0 * width, y0 * height), (x1 * width, y0 * height), (x1 * width, y1 * height),
                                   (x0 * width, y1 * height)], angle, width, height) for x0, y0, x1, y1 in redactions]
     reads: dict[int, str] = {}
-    for dpi in ALT_DPIS:
+    fast = _fast()
+    for dpi in (() if fast else ALT_DPIS):
         if all(l.conf >= LOW_CONF for l in lines):
             break                               # wszystkie linie pewne: kolejny odczyt tylko na żądanie
         alt = _ocr_lines(_render(page, dpi, rotation))
@@ -392,7 +401,7 @@ def ocr_page_rotated(page, all_reads: bool = False) -> tuple[list[Line], dict[in
             best = min(alt, key=lambda a: abs(a.y - line.y), default=None)
             if best and abs(best.y - line.y) < 0.006 and best.conf > line.conf:
                 lines[i] = best
-    budget = MAX_LINE_REREADS
+    budget = 0 if fast else MAX_LINE_REREADS
     for i, line in enumerate(lines):            # ostatnia próba: sama linia w innych powiększeniach
         if line.conf < LOW_CONF and budget > 0:
             lines[i] = _reread_line(image, line)
