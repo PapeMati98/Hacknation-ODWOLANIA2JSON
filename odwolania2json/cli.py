@@ -128,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
     # reszta partii w trybie szybkim OCR. Gdy razem z czasem dotychczasowym dochodzi do O2J_TIME_BUDGET_S,
     # pozostałe skany są czytane bez odczytów dodatkowych. Partia mieszcząca się w limicie - wynik bez zmian.
     fast_event = multiprocessing.Event()
-    budget_s = float(os.environ.get("O2J_TIME_BUDGET_S", "2400") or 0)
+    budget_s = float(os.environ.get("O2J_TIME_BUDGET_S", "2100") or 0)     # 35 min: 10 min zapasu do limitu
     read_count = 0
 
     def watch_time() -> None:
