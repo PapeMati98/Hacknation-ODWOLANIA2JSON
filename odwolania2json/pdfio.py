@@ -50,6 +50,45 @@ OCR_THREADS = 0                      # wątki silnika OCR w tym procesie; 0 = ws
 OCR_CUDA = False                     # silnik OCR na karcie graficznej (usługa OCR na serwerze)
 
 
+_OPENVINO_MODELS = {"Det": "PP-OCRv6_det_small.onnx", "Rec": "PP-OCRv6_rec_small.onnx",
+                    "Cls": "ch_ppocr_mobile_v2.0_cls_mobile.onnx"}
+
+
+def _openvino_params(threads: int) -> dict:
+    """Silnik OpenVINO na tych samych plikach ONNX co onnxruntime (pomiar 22.11: o ok. 20% szybciej na CPU,
+    identyczny tekst stron). Precyzja wymuszona na f32: domyślne bf16 na nowszych procesorach zmienia
+    odczytany tekst. O2J_OCR_ENGINE=onnxruntime albo brak pakietu openvino - zostaje onnxruntime."""
+    if os.environ.get("O2J_OCR_ENGINE", "openvino").strip().lower() != "openvino":
+        return {}
+    try:
+        import openvino  # noqa: F401
+        import rapidocr
+        from rapidocr import EngineType
+        from rapidocr.inference_engine.openvino import device_config
+    except Exception:  # noqa: BLE001 - brak lub niezgodna wersja: silnik domyślny
+        return {}
+    models = os.path.join(os.path.dirname(rapidocr.__file__), "models")
+    paths = {part: os.path.join(models, name) for part, name in _OPENVINO_MODELS.items()}
+    if not all(os.path.isfile(p) for p in paths.values()):
+        return {}
+    if not getattr(device_config.CPUConfig.get_config, "_o2j_f32", False):
+        original = device_config.CPUConfig.get_config
+
+        def get_config(self):
+            config = original(self)
+            config["INFERENCE_PRECISION_HINT"] = "f32"
+            return config
+        get_config._o2j_f32 = True
+        device_config.CPUConfig.get_config = get_config
+    params: dict = {}
+    for part, path in paths.items():
+        params[f"{part}.engine_type"] = EngineType.OPENVINO
+        params[f"{part}.model_path"] = path
+    if threads:
+        params["EngineConfig.openvino.inference_num_threads"] = threads
+    return params
+
+
 def _engine():
     global _ENGINE
     if _ENGINE is None:
@@ -60,8 +99,8 @@ def _engine():
         from rapidocr import RapidOCR
         # Kilka procesów czytających równolegle po jednym-dwóch wątkach daje większą przepustowość niż jeden
         # proces na wszystkich rdzeniach (rozpoznawanie krótkich linii słabo skaluje się z liczbą wątków).
-        params: dict = {}
-        if OCR_THREADS:
+        params: dict = {} if OCR_CUDA else _openvino_params(OCR_THREADS)
+        if OCR_THREADS and not params:
             params.update({"EngineConfig.onnxruntime.intra_op_num_threads": OCR_THREADS,
                            "EngineConfig.onnxruntime.inter_op_num_threads": 1})
         if OCR_CUDA:

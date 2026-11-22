@@ -1,0 +1,29 @@
+# Odwołania2json - obraz dla VM oceniających (2 vCPU, bez GPU): tylko tryb API Synaps, bez modelu lokalnego.
+# Budowanie na VM: docker build -f Dockerfile.jury -t odwolania2json:jury .
+FROM python:3.13-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONIOENCODING=utf-8
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt ./
+# Telemetria OpenVINO wyłączona (zakaz wysyłania danych użytkowania).
+RUN pip install -r requirements.txt && (opt_in_out --opt_out || true)
+
+# Modele OCR (PP-OCR ONNX) pobierane podczas budowania - kontener nie potrzebuje ich potem z sieci.
+RUN python -c "from rapidocr import RapidOCR; RapidOCR()"
+
+COPY odwolania2json ./odwolania2json
+COPY configs ./configs
+COPY tools ./tools
+
+# Kontrola przy budowaniu: silnik OCR startuje na OpenVINO (bez sieci, na plikach pobranych wyżej).
+RUN python -c "from odwolania2json import pdfio; pdfio.OCR_THREADS = 1; e = pdfio._engine(); import numpy as np; e(np.full((64, 256, 3), 255, np.uint8)); print('silnik OCR:', [type(getattr(getattr(e, k, None), 'session', None)).__name__ for k in ('text_det', 'text_cls', 'text_rec')])"
+
+CMD ["python", "-m", "odwolania2json"]

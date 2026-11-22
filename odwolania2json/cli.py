@@ -228,8 +228,11 @@ def read_document(path: str):
 
 
 def default_ocr_workers() -> int:
-    """Procesy czytające skany: po jednym na rdzeń fizyczny (zwykle połowa rdzeni logicznych), najwyżej 8."""
-    return max(1, min(8, (os.cpu_count() or 4) // 2))
+    """Procesy czytające skany: po jednym na rdzeń fizyczny (zwykle połowa rdzeni logicznych), najwyżej 8.
+    Na maszynie z 2 vCPU (VM oceniających) dwa procesy po jednym wątku: jeden proces zostawiał drugi vCPU
+    bezczynny podczas rasteryzacji i kroków w Pythonie (pomiar 22.11 na 30 skanach)."""
+    cpus = os.cpu_count() or 4
+    return max(min(2, cpus), min(8, cpus // 2))
 
 
 def default_threads() -> int:

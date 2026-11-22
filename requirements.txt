@@ -1,6 +1,8 @@
 # Wersje przypiete do zestawu, na ktorym wykonano pomiary (21.11.2026; Python 3.13 na Windows, 3.14 na Linux).
 rapidocr==3.10.0
 onnxruntime==1.32.0
+# Silnik OCR na CPU (te same pliki modeli, precyzja f32): ok. 20% szybciej niz onnxruntime przy identycznym tekscie.
+openvino==2026.4.1
 opencv-python-headless==5.1.0.95
 pypdfium2==5.15.2
 pyyaml==6.0.4
