@@ -77,7 +77,9 @@ def resolve_under(root: Path, *parts: str) -> Path:
     base = root.resolve()
     target = (base.joinpath(*parts)).resolve()
     if target != base and not target.is_relative_to(base):
-        raise ValueError("Niedozwolona ścieżka pliku.")
+        base = root.resolve()
+        if target != base and not target.is_relative_to(base):
+            raise ValueError("Niedozwolona ścieżka pliku.")
     return target
 
 
@@ -584,6 +586,8 @@ class WebAppState:
 
                 case_out = resolve_under(self.output_dir, job.case_name)
                 case_out.mkdir(parents=True, exist_ok=True)
+                case_trace = resolve_under(self.trace_dir, job.case_name)
+                case_trace.mkdir(parents=True, exist_ok=True)
 
                 # Etap 1: wczytanie pierwszych CLASSIFY_PAGES stron (tekst/OCR) + klasyfikacja;
                 # dalsze strony doczytujemy tylko dla rozpoznanej klasy (zgodnie z cli.read_document).
