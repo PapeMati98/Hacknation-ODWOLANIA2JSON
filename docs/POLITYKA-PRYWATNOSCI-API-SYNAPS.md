@@ -14,11 +14,11 @@ Usługę świadczy Synaptivo sp. z o.o., ul. Falista 168/9, 94-115 Łódź, KRS 
 
 ## Gdzie odbywa się przetwarzanie
 
-Model działa w Polsce. Brama HTTPS odszyfrowuje żądania w sieci globalnej. Dostawca bramy przesyła je następnie zaszyfrowanym tunelem do serwera Synaptivo.
+Model działa na serwerze Synaptivo w Łodzi i tam są przetwarzane dane. Połączenie HTTPS pozostaje zaszyfrowane aż do serwera Synaptivo. Tam kończy się TLS i następuje odszyfrowanie żądań. Ruch przechodzi przez przekaźnik TCP w polskim regionie Microsoft Azure (Poland Central, Warszawa), w subskrypcji Synaptivo sp. z o.o. Microsoft Azure dostarcza infrastrukturę sieciową. Przekaźnik przekazuje zaszyfrowane połączenie i nie zapisuje treści żądań ani odpowiedzi. Treść jest dostępna w postaci jawnej w środowisku oceniającego i na serwerze Synaptivo w Polsce.
 
 ## Logi, przechowywanie i uczenie modelu
 
-Dziennik bramy Synaptivo zapisuje czas, ścieżkę wywołania, status, skrócony identyfikator klucza, czas obsługi oraz liczbę tokenów. Przy błędach może zapisać rozmiar żądania lub krótką przyczynę odrzucenia, w tym nazwę nierozpoznanego parametru. Przy prawidłowym wywołaniu dziennik pomija treść dokumentu, odpowiedź, pełny klucz i adres IP klienta. Wpisy rotują po osiągnięciu limitu rozmiaru. Daje to zmienny czas przechowywania. Okres przechowywania logów u pośrednika i zakres kopii zapasowych pozostają do potwierdzenia.
+Dziennik bramy Synaptivo zapisuje czas, ścieżkę wywołania, status, skrócony identyfikator klucza, czas obsługi oraz liczbę tokenów. Przy błędach może zapisać rozmiar żądania lub krótką przyczynę odrzucenia, w tym nazwę nierozpoznanego parametru. Przy prawidłowym wywołaniu dziennik pomija treść dokumentu, odpowiedź, pełny klucz i adres IP klienta. Wpisy rotują po osiągnięciu limitu rozmiaru. Daje to zmienny czas przechowywania. Zakres kopii zapasowych pozostaje do potwierdzenia.
 
 Serwer modelu ma wyłączone rejestrowanie treści żądań. Fragmenty przetworzonego kontekstu pozostają w pamięci roboczej karty graficznej do ich zastąpienia lub restartu procesu. Synaptivo wykorzystuje treść i odpowiedzi do realizacji żądania i nie używa ich do treningu ani dostrajania modeli. Za czas przechowywania wejściowych PDF-ów, wyników i śladów zapisanych przez aplikację odpowiada podmiot zarządzający komputerem oceniającego.
 

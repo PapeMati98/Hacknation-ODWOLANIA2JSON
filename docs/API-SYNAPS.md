@@ -6,7 +6,8 @@ Synaptivo udostępnia model do prób odczytu pól z dokumentów. W aplikacji Odw
 
 | Ustawienie | Wartość |
 |---|---|
-| Adres sprawdzony w próbach na publicznych przykładach | `https://api.synaptivo.eu/v1` |
+| Adres API używany przez jury | `https://api.synaptivo.eu/v1` |
+| Trasa żądania | Przekaźnik TCP w Azure Poland Central przesyła zaszyfrowane dane. Synaptivo odszyfrowuje żądanie i uruchamia model w Łodzi. |
 | Identyfikator modelu | `Synaptivo/Synaps-PL-Small-4B` |
 | Uwierzytelnianie | Nagłówek `Authorization: Bearer <klucz>` |
 | Dane żądania i odpowiedzi | JSON, w kodowaniu UTF-8 |

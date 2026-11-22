@@ -8,7 +8,7 @@ Drużyna otrzymała VM. Polecenie wsadowe w wersji `8889069` przetworzyło tu 30
 
 ## Pokaz interfejsu w Windows
 
-Dotychczasowy pomiar wykonaliśmy pod adresem `https://api.synaptivo.eu/v1` z modelem `Synaptivo/Synaps-PL-Small-4B`. Pomiar dokumentuje próbę na publicznych przykładach. Do dokumentów oceny zespół musi wskazać adres usługi z potwierdzoną lokalizacją przetwarzania i przyjętą polityką prywatności. Do pokazu na publicznych przykładach w Windows użyj adresu i klucza przekazanych przez zespół. Zalecany jest Python 3.13 z programem `py`. Z katalogu z `start_ui.bat` wykonaj polecenia w PowerShell i wpisz klucz w ukrytym polu. Ustawienia obowiązują w bieżącej konsoli i jej procesach.
+Dotychczasowy pomiar wykonaliśmy pod adresem `https://api.synaptivo.eu/v1` z modelem `Synaptivo/Synaps-PL-Small-4B`. Pomiar dokumentuje próbę na publicznych przykładach. Konkursowy adres API pozostał ten sam. Przekaźnik TCP w Azure Poland Central przekazuje zaszyfrowany ruch, a Synaptivo odszyfrowuje żądania i wykonuje ekstrakcję w Łodzi. Do pokazu na publicznych przykładach w Windows użyj adresu i klucza przekazanych przez zespół. Zalecany jest Python 3.13 z programem `py`. Z katalogu z `start_ui.bat` wykonaj polecenia w PowerShell i wpisz klucz w ukrytym polu. Ustawienia obowiązują w bieżącej konsoli i jej procesach.
 
 ```powershell
 $env:O2J_API_BASE = Read-Host 'Adres API przekazany przez zespół, z końcówką /v1'
