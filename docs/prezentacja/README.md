@@ -1,6 +1,6 @@
 # ODWOŁANIA2JSON · prezentacja dla jury UZP
 
-**Drużyna „NIe wiem, ale wygeneruje”** pokazuje, jak z potwierdzenia przelewu w PDF uzyskać sześć pól w JSON i jak dodać do aplikacji kolejną klasę dokumentów.
+**Drużyna „Nie wiem, ale wygeneruję”** pokazuje, jak z potwierdzenia przelewu w PDF uzyskać sześć pól w JSON i jak dodać do aplikacji kolejną klasę dokumentów.
 
 [Prezentacja PDF do HackTribe](../Odwolania2JSON-prezentacja.pdf) · [Edytowalny PowerPoint z notatkami do sześciu slajdów](./Odwolania2JSON.pptx) · [Uruchomienie dla jury](../INSTRUKCJA-JURY.md)
 

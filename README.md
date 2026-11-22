@@ -3,7 +3,7 @@
 Rozwiązanie zadania **Odwołania2json** (Urząd Zamówień Publicznych, HackNation 2026): zamienia dokumenty PDF sprawy odwoławczej KIO — odwołanie, pełnomocnictwo, potwierdzenie przelewu — na pliki JSON zgodne ze schematem organizatora.
 
 - Aplikacja działa lokalnie bez GPU. Wariant konkursowy odczytuje pola przy użyciu **Synaps-PL Small 4B**, polskiego modelu językowego z rodziny Synaps opracowanego przez Synaptivo. [Publiczny model i licencja Apache 2.0](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B) · [Dokumentacja API Synapsa](https://synaptivo.eu/api/) · [Polityka prywatności API](https://synaptivo.eu/api/polityka-prywatnosci/)
-- Drużyna **„NIe wiem, ale wygeneruje”** przetestowała cały proces z lokalną usługą Synapsa. Na 30 publicznych skanach UZP uzyskała F1 0,9935 w 3 min 03 s. Próba przez publiczne API z kluczem jury dała F1 0,9935 na 30 skanach w 2 min 44 s. [Instrukcja jury](./docs/INSTRUKCJA-JURY.md) · [Ustalenia UZP](./docs/USTALENIA-UZP.md)
+- Drużyna **„Nie wiem, ale wygeneruję”** przetestowała cały proces z lokalną usługą Synapsa. Na 30 publicznych skanach UZP uzyskała F1 0,9935 w 3 min 03 s. Próba przez publiczne API z kluczem jury dała F1 0,9935 na 30 skanach w 2 min 44 s. [Instrukcja jury](./docs/INSTRUKCJA-JURY.md) · [Ustalenia UZP](./docs/USTALENIA-UZP.md)
 - Obsługuje PDF-y z warstwą tekstową i **skany** (OCR).
 - Typ dokumentu jest rozpoznawany **po treści**, nigdy po nazwie pliku. Dokument spoza obsługiwanych klas (np. ogłoszenie, wyrok KIO, SWZ) dostaje **pusty plik JSON** (`{}`).
 - Nową klasę dokumentu dodaje się **jednym plikiem YAML, bez zmian w kodzie**.

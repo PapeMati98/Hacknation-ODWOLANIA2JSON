@@ -1,6 +1,6 @@
 # ODWOŁANIA2JSON. Ustalenia UZP i wybór modelu
 
-**22 listopada 2026, czas polski.** Drużyna **NIe wiem, ale wygeneruje** wybrała **Synaps-PL Small 4B**, polski model językowy z rodziny Synaps opracowany przez Synaptivo. W konkursie używamy wydania S1. Publiczne API przeszło próbę z kluczem jury. Adres i identyfikator modelu zawiera [instrukcja uruchomienia](./INSTRUKCJA-JURY.md). Wcześniejsze próby lokalne używały aliasu `synaps-pl-4b-s1`. Bieżące wymagania określają [README UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/README.md) i [instrukcja VM](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/VM.md).
+**22 listopada 2026, czas polski.** Drużyna **Nie wiem, ale wygeneruję** wybrała **Synaps-PL Small 4B**, polski model językowy z rodziny Synaps opracowany przez Synaptivo. W konkursie używamy wydania S1. Publiczne API przeszło próbę z kluczem jury. Adres i identyfikator modelu zawiera [instrukcja uruchomienia](./INSTRUKCJA-JURY.md). Wcześniejsze próby lokalne używały aliasu `synaps-pl-4b-s1`. Bieżące wymagania określają [README UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/README.md) i [instrukcja VM](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/VM.md).
 
 ## Odpowiedzi UZP na Discordzie
 

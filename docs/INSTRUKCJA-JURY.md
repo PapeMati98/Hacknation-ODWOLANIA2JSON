@@ -1,6 +1,6 @@
 # ODWOŁANIA2JSON. Uruchomienie dla jury UZP
 
-**Drużyna „NIe wiem, ale wygeneruje”.** Aplikacja odczytuje PDF-y tekstowe i skany. Korzysta z Synaps-PL Small 4B, polskiego modelu językowego z rodziny Synaps opracowanego przez Synaptivo. Publiczna próba z 21 listopada objęła 30 skanów UZP i trwała 2 min 44 s. [Karta modelu](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B)
+**Drużyna „Nie wiem, ale wygeneruję”.** Aplikacja odczytuje PDF-y tekstowe i skany. Korzysta z Synaps-PL Small 4B, polskiego modelu językowego z rodziny Synaps opracowanego przez Synaptivo. Publiczna próba z 21 listopada objęła 30 skanów UZP i trwała 2 min 44 s. [Karta modelu](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B)
 
 ## Ocena wsadowa na VM UZP
 
