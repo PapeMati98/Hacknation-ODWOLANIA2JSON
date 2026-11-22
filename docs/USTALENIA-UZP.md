@@ -10,7 +10,7 @@
 | 11.26 | MateuszSz (UZP) opisał ocenę pojedynczych pól. Długi tekst, np. nazwa firmy, może otrzymać punkt od 80% podobieństwa. Prawidłowo puste pole jest pomijane w F1. | Porównujemy pola ze wzorcem. Dokładna funkcja podobieństwa i pełna lista pól z tolerancją pozostają otwarte. |
 | 15.17 | MateuszSz doprecyzował warunki hostingu. Usługodawcą ma być firma z serwerami w UE/EOG, a jej polityka prywatności ma podawać zakres i miejsce przetwarzania. | Dla API Synapsa przygotować odpowiednią informację o dostawcy, lokalizacji przetwarzania i klucz do testów jury. [Wiadomość UZP](https://discord.com/channels/1430883737486229536/1572733135035174982/1573703993442439300) |
 | 15.55 | MateuszSz potwierdził, że imiona i nazwiska w wyniku powinny być w mianowniku. | Stosować także do pełnomocników wskazanych w tekście w przypadku zależnym. Potwierdzają to komentarze w [schematach organizatora](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/tree/0b360a9da4b482a6a280696df6714404e0953505/oczekiwane-json). |
-| 16.23 | Dominik Olczak (UZP) wskazał konta GitHub `DominikOlczak`, `MateuSzSz-Sz` i `rkrol-dev`. | Po finalnym oddaniu projektu Mateusz przewiduje dostęp jury tylko do odczytu. |
+| 16.23 | Dominik Olczak (UZP) wskazał konta GitHub `DominikOlczak`, `MateuSzSz-Sz` i `rkrol-dev`. | 22 listopada o 09.38 czasu polskiego wysłano tym kontom imienne zaproszenia z prawem zapisu, zgodnie z decyzją Mateusza. |
 
 W pytaniach uczestników z godz. 12.20 pozostały m.in. sposób dopasowywania wielu elementów listy, dokładna miara podobieństwa długich tekstów i dopuszczalność dodatkowych pól w wynikowym JSON. Projekt prowadzi je odpowiednio jako Q-006, Q-002 i Q-011.
 
