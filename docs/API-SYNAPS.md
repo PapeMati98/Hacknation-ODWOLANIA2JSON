@@ -1,6 +1,6 @@
 # API polskiego modelu Synaps-PL Small 4B
 
-Synaptivo udostępnia model do prób odczytu pól z dokumentów. W aplikacji Odwołania2JSON pliki PDF, OCR i składanie wynikowego JSON pozostają po stronie oceniającego. API dostaje tekst i zwraca proponowane wartości. [Polityka prywatności API](./POLITYKA-PRYWATNOSCI-API-SYNAPS.md) · [Karta modelu i licencja Apache 2.0](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B)
+Synaptivo udostępnia model do prób odczytu pól z dokumentów. W aplikacji Odwołania2JSON pliki PDF, OCR i składanie wynikowego JSON pozostają po stronie oceniającego. API dostaje tekst i zwraca proponowane wartości. [Dokumentacja dostawcy](https://synaptivo.eu/api/) · [Publiczna polityka prywatności API](https://synaptivo.eu/api/polityka-prywatnosci/) · [Kopia polityki w repozytorium](./POLITYKA-PRYWATNOSCI-API-SYNAPS.md) · [Karta modelu i licencja Apache 2.0](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B)
 
 ## Połączenie i model
 

@@ -18,3 +18,5 @@ Dla `input/sprawa_01/odwolanie.pdf` wynik znajduje się w `output/sprawa_01/odwo
 4. Umieść [przykładowy przelew UZP](docs/prezentacja/demo/przelew.pdf) w podkatalogu sprawy w `input/` i wykonaj dokładnie polecenie jury. Porównaj sześć pól z [wzorcem UZP](docs/prezentacja/demo/wzorzec-uzp.json). Sprawdź także jeden publiczny skan. Po próbie pozostaw oba katalogi organizatora przygotowane na jego zbiór. Zależności i obrazy mają być dostępne na miejscu również po restarcie.
 
 Dostęp zespołu do VM kończy się 22 listopada 2026 o godz. 11.00 czasu polskiego. Oceniający uruchamiają partię samodzielnie. [Instrukcja VM opublikowana przez UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/VM.md)
+
+Zakres danych wysyłanych do API i miejsce ich przetwarzania opisuje Synaptivo. [Dokumentacja API](https://synaptivo.eu/api/) · [Polityka prywatności](https://synaptivo.eu/api/polityka-prywatnosci/) · [Kopia na tej maszynie](docs/POLITYKA-PRYWATNOSCI-API-SYNAPS.md)

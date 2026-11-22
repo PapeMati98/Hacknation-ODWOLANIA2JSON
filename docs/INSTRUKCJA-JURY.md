@@ -16,7 +16,7 @@ $env:O2J_API_MODEL = 'Synaptivo/Synaps-PL-Small-4B'
 $env:O2J_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'Klucz jury' -AsSecureString)).Password
 ```
 
-Przy lokalnym OCR pozostaw `O2J_OCR_BASE` nieustawione. PDF-y i obrazy stron pozostają w środowisku oceny. Do API trafiają tekst i pola formularza. Polityka w katalogu `docs` opisuje zakres i miejsce przetwarzania. [Polityka prywatności API Synaps](./POLITYKA-PRYWATNOSCI-API-SYNAPS.md) · [Adres, metody i przykład wywołania](./API-SYNAPS.md)
+Przy lokalnym OCR pozostaw `O2J_OCR_BASE` nieustawione. PDF-y i obrazy stron pozostają w środowisku oceny. Do API trafiają tekst i pola formularza. Polityka dostawcy opisuje zakres i miejsce przetwarzania. [Polityka prywatności API Synapsa](https://synaptivo.eu/api/polityka-prywatnosci/) · [Dokumentacja API](https://synaptivo.eu/api/) · [Kopia polityki na VM](./POLITYKA-PRYWATNOSCI-API-SYNAPS.md)
 
 ## Pierwsza próba
 
