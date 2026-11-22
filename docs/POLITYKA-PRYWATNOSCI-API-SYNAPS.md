@@ -14,7 +14,7 @@ Usługę świadczy Synaptivo sp. z o.o., ul. Falista 168/9, 94-115 Łódź, KRS 
 
 ## Gdzie odbywa się przetwarzanie
 
-Model wykonuje obliczenia na serwerze Synaptivo w Polsce. Zewnętrzna brama HTTPS odszyfrowuje żądania w sieci globalnej, bez ograniczenia do UE/EOG, i przesyła je zaszyfrowanym tunelem do Synaptivo.
+Model działa w Polsce. Brama HTTPS odszyfrowuje żądania w sieci globalnej. Dostawca bramy przesyła je następnie zaszyfrowanym tunelem do serwera Synaptivo.
 
 ## Logi, przechowywanie i uczenie modelu
 
