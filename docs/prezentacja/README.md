@@ -44,3 +44,5 @@ Aby powtórzyć ekstrakcję, wybierz **Zapisz klasę YAML** w swojej kopii demon
 ## Grafiki użyte w slajdach
 
 Znaki UZP i HackNation oraz dwa kadry z aplikacji są dostępne jako oddzielne pliki PNG. Interfejs zaprojektował zespół w Antigravity z Gemini. [Znak UZP](./grafiki/logo-uzp.png) · [Znak HackNation](./grafiki/logo-hacknation.png) · [Widok sprawy](./grafiki/widok-sprawy.png) · [Edytor YAML](./grafiki/edytor-yaml.png) · [Materiał KAS ze znakiem HackNation](https://www.gov.pl/web/ias-wroclaw/resort-finansow-partnerem-strategiczny-na-hacknation-w-bydgoszczy-z-kas-dwa-zadania-dla-uczestnikow)
+
+Logo Synaptivo jest dostępne w dwóch wariantach wektorowych do wstawienia w prezentacji. [Logo z napisem (SVG)](./grafiki/logo_z_napisem.svg) · [Sam znak (SVG)](./grafiki/logo_bez_napisu.svg)
