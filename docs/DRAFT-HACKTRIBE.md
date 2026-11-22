@@ -4,10 +4,10 @@
 
 | Pole formularza | Wartość |
 |---|---|
-| Nazwa projektu | Odwołania2JSON — ekstrakcja danych ze spraw KIO |
+| Nazwa projektu | JSON, ja tu tylko parsuję |
 | Zadanie partnerskie | Odwołania2json — Urząd Zamówień Publicznych |
 | Nazwa zespołu | Nie wiem, ale wygeneruję |
-| Numer stolika | Lider wpisuje przydzielony numer z hali. |
+| Numer stolika | 5D |
 | Lider i skład | Sprawdzić w panelu lidera. Przy dwóch zadaniach zespołowych drugi projekt zakłada inny lider, a do obu dodaje się ten sam skład. |
 | Link do prototypu | [PapeMati98/Hacknation-ODWOLANIA2JSON](https://github.com/PapeMati98/Hacknation-ODWOLANIA2JSON) |
 
