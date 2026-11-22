@@ -23,7 +23,7 @@ PDF i wzorzec pochodzą z wersji danych UZP `0b360a9`. Po otwarciu pliku JSON ro
 |---|---|
 | 0:00–0:15 · slajd 1 | „To przelew z publicznej sprawy UZP. Osoba sprawdzająca akta potrzebuje m.in. daty operacji, kwoty i numeru transakcji. Pokażemy, skąd wzięły się w JSON.” |
 | 0:15–0:50 · slajd 2 i aplikacja | Wgraj `przelew.pdf` i uruchom ekstrakcję. Otwórz wynik. Wskaż 23 sierpnia i 50 zł, pobierz JSON i pokaż ślad odczytu jednego pola. Przy braku połączenia pokaż `wynik-synaps.json` i powiedz wprost, że pochodzi z wcześniejszej próby na tym samym dokumencie. |
-| 0:50–1:15 · slajd 3 | „Na 30 publicznych skanach UZP przez publiczne API uzyskaliśmy F1 0,9935 w 2 min 44 s. We wcześniejszej wersji 1800d25 na 36 dokumentach z 12 spraw odłożonych przed strojeniem uzyskaliśmy F1 0,9938 w 31 s. Wynik na ukrytym zbiorze ustali jury.” |
+| 0:50–1:15 · slajd 3 | „Na 30 publicznych skanach UZP przez publiczne API uzyskaliśmy F1 0,9935 w 2 min 44 s. Na 36 dokumentach z 12 odłożonych spraw wersja ed312e1 uzyskała F1 0,9963 w 32 s. Wynik na ukrytym zbiorze ustali jury.” |
 | 1:15–1:38 · slajd 4 i edytor YAML | W przygotowanym edytorze wskaż frazę „protokół przekazania” i oba pola w sekcji `output`. „Nową klasę dodajemy jednym plikiem YAML. W próbie z lokalnym modelem aplikacja poprawnie odczytała numer protokołu i datę.” |
 | 1:38–1:55 · slajd 5 | Pokaż `RUN.md` i przykład UZP. „Na maszynie jury jeden przebieg czyta PDF-y z `input` i zwraca JSON w `output`. OCR działa lokalnie. Do ręcznego sprawdzenia mamy też interfejs z widokiem pól i pobieraniem ZIP.” |
 | 1:55–2:00 · slajd 6 | „Pola odczytuje polski model z rodziny Synaps opracowany przez Synaptivo. Dziękujemy.” Zostaw slajd ze źródłami na czas pytań. |

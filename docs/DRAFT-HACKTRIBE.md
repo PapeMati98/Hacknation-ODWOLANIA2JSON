@@ -23,7 +23,7 @@ Z PDF pobieramy tekst lub rozpoznajemy go lokalnym OCR. Plik YAML określa regu�
 
 ### Dotychczasowe postępy
 
-Rozpoznajemy odwołania, pełnomocnictwa i przelewy. Na 30 publicznych skanach UZP przez API uzyskaliśmy F1 0,9935 w 2 min 44 s. Na własnym zbiorze 43 trudnych dokumentów wykorzystanym do poprawek wersja `ed312e1` uzyskała F1 0,974. W oddzielnej próbie dokumentów spoza klas wszystkie 22 orzeczenia KIO otrzymały pusty JSON. Wcześniejszy test na 36 odłożonych dokumentach dotyczył wersji 1800d25 (F1 0,9938). W odrębnej próbie z lokalnym Qwenem po dodaniu czwartej klasy przez YAML poprawnie odczytaliśmy oba pola protokołu. Aplikacja udostępnia JSON dokumentu i ZIP sprawy.
+Rozpoznajemy odwołania, pełnomocnictwa i przelewy. Na 30 publicznych skanach UZP przez API uzyskaliśmy F1 0,9935 w 2 min 44 s. Na własnym zbiorze 43 trudnych dokumentów wykorzystanym do poprawek wersja `ed312e1` uzyskała F1 0,974. W oddzielnej próbie dokumentów spoza klas wszystkie 22 orzeczenia KIO otrzymały pusty JSON. Na 36 dokumentach z 12 odłożonych spraw kod ed312e1 uzyskał F1 0,9963 w 32 sekundy. W odrębnej próbie z lokalnym Qwenem po dodaniu czwartej klasy przez YAML poprawnie odczytaliśmy oba pola protokołu. Aplikacja udostępnia JSON dokumentu i ZIP sprawy.
 
 ### Przy zapisie projektu
 
