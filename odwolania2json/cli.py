@@ -230,7 +230,7 @@ CLASSIFY_PAGES = 2          # tyle pierwszych stron wystarcza do rozpoznania kla
 _CLASSES: list = []
 
 
-FAST_SHARE = 0.55           # czas skanu w trybie szybkim OCR względem pełnego (profil 22.11: ~0,5, z zapasem)
+FAST_SHARE = 0.7            # czas skanu w trybie szybkim OCR względem pełnego (VM UZP 22.11: 11,9 / 17,0 s)
 
 
 def _init_reader(classes_dir: str, ocr_threads: int, fast_event=None) -> None:
