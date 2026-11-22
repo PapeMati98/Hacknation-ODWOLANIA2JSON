@@ -10,6 +10,7 @@
 | Numer stolika | 5D |
 | Lider i skład | Agnieszka Pruszek. Na karcie zadeklarowano 4 osoby. Przy drugim zadaniu zespołowym lider porównuje imienny skład obu kart. |
 | Link do prototypu | [PapeMati98/Hacknation-ODWOLANIA2JSON](https://github.com/PapeMati98/Hacknation-ODWOLANIA2JSON) |
+| Film (pole „Your video presentation”) | [https://www.youtube.com/watch?v=w3GdFEV3hNI](https://www.youtube.com/watch?v=w3GdFEV3hNI) |
 
 **Model wykorzystany w prototypie.** [Synaptivo/Synaps-PL-Small-4B na Hugging Face](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B) · [Rewizja wag i licencja Apache 2.0](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B/tree/67e30d038b23acb894e877fb6533e25d82afc86a)
 
