@@ -76,6 +76,8 @@ def add_text_layer(src_images: list[Image.Image], texts: list[str], dst: Path) -
             obj = raw.FPDFPageObj_NewTextObj(pdf.raw, b"Helvetica", 6.0)
             data = (line[:160] + "\x00").encode("utf-16-le")
             raw.FPDFText_SetText(obj, ctypes.cast(ctypes.create_string_buffer(data), raw.FPDF_WIDESTRING))
+            # Warstwa OCR skanera jest niewidoczna: obraz strony zostaje nietknięty.
+            raw.FPDFTextObj_SetTextRenderMode(obj, raw.FPDF_TEXTRENDERMODE_INVISIBLE)
             raw.FPDFPageObj_Transform(obj, 1, 0, 0, 1, 40.0, float(height - 40 - 7 * n))
             raw.FPDFPage_InsertObject(page.raw, obj)
         raw.FPDFPage_GenerateContent(page.raw)

@@ -87,6 +87,17 @@ def classify(doc: Document, classes: list[DocClass]) -> tuple[str | None, dict[s
 
 
 # ---------------------------------------------------------------- ekstrakcja
+CONTINUED = "#> ciąg dalszy: pola puste na pierwszych stronach, odczytane z kolejnych"
+
+
+def _at(data: dict, path: str):
+    """Wartość spod ścieżki `Sekcja.pole` (bez list)."""
+    node = data
+    for part in path.split("."):
+        node = node.get(part) if isinstance(node, dict) else None
+    return node
+
+
 class Extractor:
     def __init__(self, backend, final_check: str = "off"):
         self.backend = backend
@@ -112,6 +123,12 @@ class Extractor:
             expected = {}
             answer = self.backend.complete(SYSTEM_PROMPT, self.build_prompt(doc, cls), cls.first_header() + "\n", 600)
         data, trace = self.finish(doc, cls, answer)
+        more = cls.continue_when_empty
+        if more and hasattr(self.backend, "fill") and all(_at(data, path) is None for path in more["fields"]):
+            extra = self.continue_reading(doc, cls, more)
+            if extra:
+                answer = f"{answer}\n{CONTINUED}\n{extra}"
+                data, trace = self.finish(doc, cls, answer)
         if self.final_check != "off" and hasattr(self.backend, "say"):
             from .sanity import review
             review(self.backend, doc.text(max_pages=cls.pages), cls.output, data, trace, veto=self.final_check == "veto")
@@ -121,6 +138,22 @@ class Extractor:
                 trace.append({"pole": name, "wartosc": found, "surowa": found, "status": "ostrzezenie", "zrodlo": "reguła listy",
                               "uwaga": f"dokument wymienia {count} podmioty w wyliczeniu, a odczytano {found}"})
         return data, trace, answer
+
+    def continue_reading(self, doc: Document, cls: DocClass, more: dict) -> str:
+        """Pola puste po przeczytaniu `pages` stron: doczytanie kolejnych stron i pytanie tylko o te pola.
+        Zwraca fragment formularza (pusty, gdy dokument nie ma dalszych stron)."""
+        doc.ensure_pages(int(more["pages"]))
+        pages = doc.pages[cls.pages:int(more["pages"])]
+        wanted = set(more["fields"])
+        sections = []
+        for s in cls.sections():
+            keys = [f.key for f in s.fields if (f.key if s.name == "_" else f"{s.name}.{f.key}") in wanted]
+            if keys:
+                sections.append((s.name, s.is_list, keys))
+        if not pages or not sections:
+            return ""
+        text = "\n\n".join(f"--- strona {p.number} ---\n{p.text}" for p in pages)
+        return self.backend.fill(SYSTEM_PROMPT, self.static_prompt(cls), text, sections)
 
     @staticmethod
     def finish(doc: Document, cls: DocClass, answer: str) -> tuple[dict, list[dict]]:
@@ -333,7 +366,9 @@ def check_leaf(spec: dict, value, doc: Document, trace: list[dict], path: str):
         result, status, note = None, "niezweryfikowane", "wartości nie ma w tekście dokumentu"
 
     if isinstance(result, str) and spec.get("wraps"):
-        longer = extend_wrapped(result, text, spec.get("reject", []))
+        wraps = spec["wraps"]
+        longer = extend_wrapped(result, text, spec.get("reject", []),
+                                wraps.get("closing") if isinstance(wraps, dict) else None)
         if longer != result:
             result, note = longer, "wartość złamana w dokumencie na kolejną linię - dołączono ciąg dalszy"
 
@@ -503,17 +538,28 @@ def ocr_confirms(doc: Document, probe: str, text: str) -> str | None:
     return None
 
 
-def extend_wrapped(value: str, text: str, labels: list[str]) -> str:
+def extend_wrapped(value: str, text: str, labels: list[str], closing: str | None = None) -> str:
     """Wartość złamana w dokumencie na kolejną linię (długi tytuł przelewu), a przepisana tylko do końca pierwszej.
 
     Ciąg dalszy jest dołączany, gdy wartość kończy linię, a linia urywa się przecinkiem lub łącznikiem albo
-    następna zaczyna się małą literą - i następna linia nie jest etykietą kolejnej rubryki."""
+    następna zaczyna się małą literą - i następna linia nie jest etykietą kolejnej rubryki.
+
+    `closing` (wzorzec znaku zamykającego cudzysłów) zmienia warunek: ciąg dalszy to początek następnej linii
+    aż do znaku zamykającego, który w tej linii nie ma otwarcia - zamyka więc cudzysłów z linii z wartością."""
     lines = [line.strip() for line in text.splitlines()]
     value = value.strip()
     for i, line in enumerate(lines[:-1]):
         at = line.rfind(value)
         if not value or at < 0 or line[at + len(value):].strip(" ,;-–/"):
             continue
+        if closing:
+            nxt = lines[i + 1]
+            end = re.search(closing, nxt)
+            head = nxt[:end.start()].strip() if end else ""
+            if (not head or re.search("[„«]", head) or nxt.startswith("---")
+                    or any(re.match(p, nxt, flags=re.IGNORECASE) for p in labels)):
+                continue
+            return f"{line[at:]} {head}"
         out = line[at:]
         for nxt in lines[i + 1: i + 3]:
             continues = out.endswith((",", "-", "–", "/")) or nxt[:1].islower()

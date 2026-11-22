@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from odwolania2json import pdfio  # noqa: E402
 from odwolania2json.config import load_classes  # noqa: E402
 from odwolania2json.crosscheck import case_findings, load_rules, review_entries  # noqa: E402
-from odwolania2json.extract import Extractor  # noqa: E402
+from odwolania2json.extract import CONTINUED, Extractor  # noqa: E402
 
 APP = Path(__file__).resolve().parent.parent
 
@@ -38,7 +38,9 @@ def main() -> int:
             continue
         cls = classes[record["klasa"]]
         rel = path.relative_to(args.trace).with_name(path.name.removesuffix(".trace.json") + ".json")
-        doc = pdfio.load(record["plik"], max_pages=max_pages)
+        more = cls.continue_when_empty      # przebieg doczytał dalsze strony: reguły potrzebują ich tekstu
+        pages = int(more["pages"]) if more and CONTINUED in record["odpowiedz_modelu"] else max_pages
+        doc = pdfio.load(record["plik"], max_pages=pages)
         data, trace = Extractor.finish(doc, cls, record["odpowiedz_modelu"])
         out = args.output / rel
         out.parent.mkdir(parents=True, exist_ok=True)

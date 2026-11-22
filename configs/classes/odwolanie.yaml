@@ -6,6 +6,11 @@ description: >-
   Odwołanie wnoszone do Prezesa Krajowej Izby Odwoławczej przez wykonawcę (Odwołującego)
   wobec czynności lub zaniechania Zamawiającego w postępowaniu o udzielenie zamówienia publicznego.
 pages: 2            # ile pierwszych stron czytać (dane stron i postępowania stoją na 1. stronie, zarzuty zaczynają się na 2.)
+# Zarzuty zaczynają się czasem dopiero po długim wprowadzeniu. Gdy dwie pierwsze strony nie podają ani dnia,
+# ani rodzaju zaskarżonej czynności, czytane są strony 3-4, a model jest pytany tylko o te dwa pola.
+continue_when_empty:
+  fields: ["OdwolanieKIO.czynnosc_dzien", "OdwolanieKIO.czynnosc_powod_id"]
+  pages: 4
 classify:
   title: ["odwołanie"]
   keywords:
@@ -204,4 +209,7 @@ output:
       type: string
       validator: text
       verify_in_text: true
+      # Tytuł w cudzysłowie złamany na dwie linie, a przepisany tylko do końca pierwszej: ciąg dalszy sięga
+      # do znaku zamykającego cudzysłów w następnej linii.
+      wraps: {closing: '[”“"»]'}
       desc: "Tytuł (nazwa) zamówienia, zwykle w cudzysłowie po słowach 'pn.' lub 'przedmiotem jest'."

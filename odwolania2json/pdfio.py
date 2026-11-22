@@ -215,8 +215,11 @@ def _render(page, dpi: int, rotation: int = 0) -> np.ndarray:
 MAX_LINE_REREADS = 12
 
 ROTATE_CONF = 0.88     # średnia pewność odczytu, poniżej której sprawdzamy, czy strona nie leży do góry nogami
-ROTATE_GAIN = 1.25     # o tyle lepszy musi być odczyt strony obróconej, żeby go przyjąć
+ROTATE_WIDE_CONF = 0.93    # ... albo średnia pewność najdłuższych linii strony (patrz _rotations_to_try)
+ROTATE_GAIN = 1.1      # o tyle lepszy musi być odczyt strony obróconej, żeby go przyjąć (strona prosta po
+                       # obróceniu daje 0,55-0,8 pierwotnej jakości, odwrócona - 1,2-2,8)
 ROTATE_MIN_LINES = 3
+ROTATE_SAMPLE = 12     # tyle najdłuższych linii strony bierzemy do oceny
 
 
 def _quality(lines: list) -> float:
@@ -233,6 +236,11 @@ def _rotations_to_try(lines: list, width: int, height: int) -> tuple[int, ...]:
     if tall > len(lines) / 2:
         return (90, 270)
     if sum(l.conf for l in lines) / len(lines) < ROTATE_CONF:
+        return (180,)
+    # Silnik OCR sam odwraca krótkie linie, więc strona do góry nogami bywa czytana z wysoką średnią pewnością;
+    # długie linie zdradzają ją zawsze: na stronie prostej czytają się najlepiej, na odwróconej najgorzej.
+    wide = sorted((l for l in lines if l.box), key=lambda l: l.box[2] - l.box[0], reverse=True)[:ROTATE_SAMPLE]
+    if wide and sum(l.conf for l in wide) / len(wide) < ROTATE_WIDE_CONF:
         return (180,)
     return ()
 
@@ -396,7 +404,7 @@ def load(path: str, max_pages: int | None = None) -> Document:
     doc = Document(path, _read_pages(path, pdf, range(n)))
     # Pusta strona na początku skanu (odwrócona kartka, okładka): dokument zaczyna się od pierwszej strony z treścią.
     while (doc.pages and doc.skipped < MAX_BLANK_SKIP and _blank(doc.pages[0])
-           and doc.skipped + len(doc.pages) < len(pdf)):
+           and (len(doc.pages) > 1 or doc.skipped + len(doc.pages) < len(pdf))):
         doc.pages.pop(0)
         doc.skipped += 1
         doc.pages += _read_pages(path, pdf, range(doc.skipped + len(doc.pages), min(doc.skipped + n, len(pdf))))

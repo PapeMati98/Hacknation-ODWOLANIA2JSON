@@ -147,13 +147,13 @@ def _leaf_parents(data, path: str) -> list[tuple[dict, str]]:
 
 
 def _in_context(text: str, value: str, pattern: str) -> bool:
-    """Czy wartość stoi w dokumencie w linii (albo tuż po linii) pasującej do wzorca - np. nazwisko po
-    słowach „w imieniu spółki” albo przed funkcją „- Członek Zarządu”."""
+    """Czy wartość stoi w dokumencie w linii pasującej do wzorca albo w linii sąsiedniej - np. nazwisko po
+    słowach „w imieniu spółki”, przed funkcją „- Członek Zarządu” albo nad nią w bloku podpisu."""
     lines = text.splitlines()
     needle = fold(value)
     rx = re.compile(pattern, re.IGNORECASE)
     for i, line in enumerate(lines):
-        if needle in fold(line) and rx.search(" ".join(lines[max(0, i - 1): i + 1])):
+        if needle in fold(line) and rx.search(" ".join(lines[max(0, i - 1): i + 2])):
             return True
     return False
 

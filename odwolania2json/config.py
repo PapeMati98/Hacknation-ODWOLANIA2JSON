@@ -45,6 +45,9 @@ class DocClass:
     # Tytuły innych pism (np. "postanowienie", "odpowiedź na odwołanie"): znalezione na początku 1. strony
     # wykluczają klasę, choćby słownictwo dokumentu do niej pasowało.
     exclude_title: list[str] = field(default_factory=list)
+    # Pola puste po przeczytaniu `pages` stron: {"fields": [ścieżki], "pages": N} - doczytaj strony do N-tej
+    # i zapytaj model tylko o te pola (zaskarżona czynność opisana dopiero po długim wprowadzeniu).
+    continue_when_empty: dict = field(default_factory=dict)
 
     # ------------------------------------------------------------- formularz
     def sections(self) -> list[Section]:
@@ -130,6 +133,7 @@ def load_classes(directory: Path) -> list[DocClass]:
             title=list(cls.get("title") or []),
             title_weight=float(cls.get("title_weight", 5)),
             exclude_title=list(cls.get("exclude_title") or []),
+            continue_when_empty=raw.get("continue_when_empty") or {},
             output=raw["output"],
             dictionaries={k: {int(i): s for i, s in d.items()} for k, d in (raw.get("dictionaries") or {}).items()},
             hints={k: {int(i): s for i, s in d.items()} for k, d in (raw.get("hints") or {}).items()},
