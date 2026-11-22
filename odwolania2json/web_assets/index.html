@@ -87,7 +87,7 @@
       <section class="panel" aria-labelledby="upload-h">
         <div class="panel-head">
           <h2 id="upload-h" class="panel-title">Nowa sprawa (upload PDF)</h2>
-          <span class="case-meta">CPU · open-source</span>
+          <span id="upload-mode-badge" class="case-meta">open-source</span>
         </div>
         <form id="upload-form" class="panel-body stack" novalidate>
           <label id="dropzone" class="dropzone" for="pdf-files">
@@ -197,6 +197,7 @@
                   <button id="btn-dl-json" class="btn btn-sm" type="button" disabled>Pobierz .json</button>
                 </div>
               </div>
+              <div id="json-doc-error" class="alert-err doc-err-box" role="alert" hidden></div>
               <div id="json-foreign-note" class="info-box" hidden></div>
               <pre id="json-view" class="json-view"></pre>
             </div>
@@ -317,7 +318,7 @@
 
   <footer class="gov-footer">
     <div class="gov-footer-inner">
-      <span>Urząd Zamówień Publicznych · Odwołania2json (100% open-source, lokalnie on-premise CPU)</span>
+      <span id="footer-runtime">Urząd Zamówień Publicznych · Odwołania2json (open-source · lokalny OCR)</span>
       <span class="mono hn-footer-meta">HACKNATION 2026 · ZAPROGRAMUJ PRZYSZŁOŚĆ POLSKI · 21–22.11.2026 / BYDGOSZCZ</span>
     </div>
   </footer>

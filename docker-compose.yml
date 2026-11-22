@@ -23,7 +23,7 @@ services:
     build: .
     image: odwolania2json:latest
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     command:
       - sh
       - -c
@@ -39,3 +39,5 @@ services:
       - O2J_API_BASE
       - O2J_API_MODEL
       - O2J_API_KEY
+      - O2J_API_PARALLEL
+      - O2J_OCR_BASE

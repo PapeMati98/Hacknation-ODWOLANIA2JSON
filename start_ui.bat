@@ -1,13 +1,27 @@
 @echo off
-rem Odwolania2json Web UI: upload PDF, podglad JSON, sladu ekstrakcji i klas YAML (CPU, bez GPU).
+rem Odwolania2json Web UI: upload PDF, podglad JSON, sladu ekstrakcji i klas YAML.
+rem Model jezykowy: po API (plik api.env albo zmienne O2J_API_*) albo lokalny plik GGUF (CPU, bez GPU).
 setlocal
 cd /d "%~dp0"
 
 if not exist ".venv\Scripts\python.exe" (
-    echo [1/3] Tworzenie srodowiska Python 3.13...
-    py -3.13 -m venv .venv || goto :error
+    echo [1/3] Tworzenie srodowiska Python...
+    set "PY="
+    py -3.13 -c "print(1)" >nul 2>&1 && set "PY=py -3.13"
+    if not defined PY py -3.14 -c "print(1)" >nul 2>&1 && set "PY=py -3.14"
+    if not defined PY py -3.12 -c "print(1)" >nul 2>&1 && set "PY=py -3.12"
+    if not defined PY python -c "import sys; raise SystemExit(0 if (3, 12) <= sys.version_info[:2] <= (3, 14) else 1)" >nul 2>&1 && set "PY=python"
+)
+if not exist ".venv\Scripts\python.exe" (
+    if not defined PY (
+        echo Nie znaleziono Pythona 3.12-3.14. Zainstaluj Python 3.13 z https://www.python.org/downloads/ ^(z opcja "py launcher"^) i uruchom ponownie.
+        exit /b 1
+    )
+    %PY% -m venv .venv || goto :error
     ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
     ".venv\Scripts\python.exe" -m pip install -r requirements.txt || goto :error
+    rem Modele OCR pobieramy od razu (gdy OCR jest lokalny), zeby pierwszy skan w UI nie czekal na pobranie.
+    if not defined O2J_OCR_BASE ".venv\Scripts\python.exe" tools\download_models.py --ocr-only || goto :error
 )
 
 rem Model po API (zmienna O2J_API_BASE albo plik api.env): lokalnego modelu nie trzeba instalowac ani pobierac.

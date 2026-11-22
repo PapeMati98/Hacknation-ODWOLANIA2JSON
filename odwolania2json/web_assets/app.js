@@ -635,8 +635,8 @@ output:
       const nameSpan = document.createElement("span");
       nameSpan.textContent = doc.pdf_name;
       const tag = document.createElement("span");
-      tag.className = doc.skipped ? "doc-tag doc-tag-foreign" : "doc-tag";
-      tag.textContent = doc.skipped ? "spoza klas → {}" : (doc.klasa || "json");
+      tag.className = doc.blad ? "pill pill-err" : (doc.skipped ? "doc-tag doc-tag-foreign" : "doc-tag");
+      tag.textContent = doc.blad ? "błąd ekstrakcji" : (doc.skipped ? "spoza klas → {}" : (doc.klasa || "json"));
       b.append(nameSpan, tag);
       strip.append(b);
       docTabEls.push(b);
@@ -668,6 +668,15 @@ output:
     const jsonView = el("json-view");
     const statsPill = el("json-field-stats");
     const foreignNote = el("json-foreign-note");
+    const docErrBox = el("json-doc-error");
+
+    if (doc.blad) {
+      docErrBox.hidden = false;
+      docErrBox.textContent = `Błąd ekstrakcji dokumentu: ${doc.blad} (zapisano pusty JSON {}, reszta sprawy przetworzona niezależnie).`;
+    } else {
+      docErrBox.hidden = true;
+      docErrBox.textContent = "";
+    }
 
     if (doc.skipped) {
       el("json-pane-title").textContent = `Wynikowy JSON (${doc.json_name || doc.stem + ".json"})`;
@@ -938,7 +947,11 @@ output:
     const totalFields = (summary.sections || []).reduce((acc, s) => acc + s.fields.length, 0);
     content.replaceChildren();
     const line1 = document.createElement("div");
-    line1.textContent = `Klasa: ${summary.name} · strony: ${summary.pages} · próg: ${summary.min_score} · słów kluczowych: ${summary.keywords_count}`;
+    const exclPart = summary.exclude_title_count ? ` · wykluczenia tytułu: ${summary.exclude_title_count}` : "";
+    const contPart = summary.continue_when_empty
+      ? ` · doczytanie: do str. ${summary.continue_when_empty.pages}`
+      : "";
+    line1.textContent = `Klasa: ${summary.name} · strony: ${summary.pages}${contPart} · próg: ${summary.min_score} · słów kluczowych: ${summary.keywords_count}${exclPart}`;
     const line2 = document.createElement("div");
     line2.style.marginTop = "4px";
     line2.textContent = `Sekcje (${summary.sections.length}), pola (${totalFields}): `
@@ -1082,9 +1095,26 @@ output:
     try {
       const st = await apiFetch("/api/status");
       state.status = st;
-      el("env-backend").textContent = st.backend ? st.backend.label : "CPU";
+      const b = st.backend || {};
+      const envEl = el("env-backend");
+      envEl.textContent = b.label || "CPU";
+      envEl.className = (b.mode === "cpu" && b.model_exists === false) ? "pill pill-warn" : "pill pill-ok";
       el("env-checksum").textContent = `Tryb: ${st.checksum_policy || "confidence"}`;
       el("nav-class-count").textContent = String(st.classes_count || 0);
+
+      const ocrLabel = b.ocr_mode === "api" ? "OCR API" : "lokalny OCR";
+      const badgeEl = el("upload-mode-badge");
+      const footerEl = el("footer-runtime");
+      if (b.mode === "api") {
+        if (badgeEl) badgeEl.textContent = `API · ${ocrLabel}`;
+        if (footerEl) footerEl.textContent = `Urząd Zamówień Publicznych · Odwołania2json (open-source · ${b.api_model || "API"} + ${ocrLabel})`;
+      } else if (b.mode === "cpu") {
+        if (badgeEl) badgeEl.textContent = `CPU · ${ocrLabel}`;
+        if (footerEl) footerEl.textContent = `Urząd Zamówień Publicznych · Odwołania2json (100% open-source · lokalnie CPU + ${ocrLabel})`;
+      } else {
+        if (badgeEl) badgeEl.textContent = "tryb testowy";
+        if (footerEl) footerEl.textContent = "Urząd Zamówień Publicznych · Odwołania2json (tryb testowy)";
+      }
       const vrSelect = el("visual-reader-mode");
       const vrNote = el("visual-reader-note");
       const onOpt = vrSelect.querySelector('option[value="on"]');

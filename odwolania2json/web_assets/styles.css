@@ -791,6 +791,10 @@ label.dropzone:focus-within {
   line-height: 1.45;
 }
 
+.doc-err-box {
+  margin: 12px 14px 0;
+}
+
 .filter-strip {
   padding: 8px 14px;
   border-bottom: 1px solid var(--border);

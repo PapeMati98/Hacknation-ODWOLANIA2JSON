@@ -23,6 +23,7 @@ import time
 import urllib.parse
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from email.parser import BytesParser
 from email.policy import default as email_policy
@@ -34,11 +35,11 @@ from typing import Callable
 import yaml
 
 from . import extract, pdfio
-from .cli import APP_ROOT, default_threads, write_trace
+from .cli import APP_ROOT, CLASSIFY_PAGES, default_threads, write_trace
 from .config import DocClass, load_classes
 from .crosscheck import case_findings, load_rules, review_entries
 from .extract import Extractor, classify
-from .llm import make_backend
+from .llm import LlamaCppBackend, make_backend
 
 ASSETS_DIR = Path(__file__).resolve().parent / "web_assets"
 BUILTIN_CLASSES = frozenset({"odwolanie", "pelnomocnictwo", "przelew"})
@@ -120,6 +121,15 @@ def parse_class_yaml(yaml_text: str) -> tuple[DocClass, dict]:
     cls_cfg = raw.get("classify") or {}
     if not isinstance(cls_cfg, dict):
         raise ValueError("Sekcja 'classify' musi być obiektem YAML.")
+    exclude_title_raw = cls_cfg.get("exclude_title") or []
+    if not isinstance(exclude_title_raw, list) or any(not isinstance(t, str) or not t.strip() for t in exclude_title_raw):
+        raise ValueError("Pole 'classify.exclude_title' musi być listą niepustych napisów.")
+    continue_raw = raw.get("continue_when_empty") or {}
+    if continue_raw:
+        if not isinstance(continue_raw, dict) or not isinstance(continue_raw.get("fields"), list) or not continue_raw.get("fields"):
+            raise ValueError("Sekcja 'continue_when_empty' musi zawierać listę 'fields' oraz liczbę stron 'pages'.")
+        if int(continue_raw.get("pages", 0)) < 1:
+            raise ValueError("Pole 'continue_when_empty.pages' musi być dodatnią liczbą całkowitą.")
     doc_class = DocClass(
         name=name,
         description=str(raw.get("description") or "").strip(),
@@ -129,6 +139,8 @@ def parse_class_yaml(yaml_text: str) -> tuple[DocClass, dict]:
         min_score=float(cls_cfg.get("min_score", 4)),
         title=[str(t) for t in (cls_cfg.get("title") or [])],
         title_weight=float(cls_cfg.get("title_weight", 5)),
+        exclude_title=[str(t) for t in exclude_title_raw],
+        continue_when_empty=continue_raw,
         output=raw["output"],
         dictionaries={
             str(k): {int(i): str(s) for i, s in d.items()}
@@ -142,6 +154,10 @@ def parse_class_yaml(yaml_text: str) -> tuple[DocClass, dict]:
     sections = doc_class.sections()
     if not sections:
         raise ValueError("Sekcja 'output' nie zawiera żadnych pól do ekstrakcji.")
+    for s in sections:
+        for f in s.fields:
+            if "or_from" in f.spec and (not isinstance(f.spec["or_from"], str) or not f.spec["or_from"].strip()):
+                raise ValueError(f"Pole '{f.key}': opcja 'or_from' musi być niepustym napisem (nazwą innego pola).")
     summary = {
         "name": doc_class.name,
         "description": doc_class.description,
@@ -150,6 +166,12 @@ def parse_class_yaml(yaml_text: str) -> tuple[DocClass, dict]:
         "title": doc_class.title,
         "keywords_count": len(doc_class.keywords),
         "negative_count": len(doc_class.negative),
+        "exclude_title_count": len(doc_class.exclude_title),
+        "continue_when_empty": (
+            {"fields": list(doc_class.continue_when_empty.get("fields") or []), "pages": int(doc_class.continue_when_empty["pages"])}
+            if doc_class.continue_when_empty
+            else None
+        ),
         "dictionaries": list(doc_class.dictionaries.keys()),
         "sections": [
             {
@@ -162,7 +184,10 @@ def parse_class_yaml(yaml_text: str) -> tuple[DocClass, dict]:
                         "validator": f.spec.get("validator"),
                         "verify_in_text": bool(f.spec.get("verify_in_text", False)),
                         "rules": [
-                            k for k in ("requires", "not_in", "line_pattern", "decide", "known_values", "reject", "sanity")
+                            k for k in (
+                                "requires", "not_in", "line_pattern", "decide", "known_values",
+                                "reject", "sanity", "or_from", "wraps", "check",
+                            )
                             if k in f.spec
                         ],
                         "desc": f.spec.get("desc", ""),
@@ -243,6 +268,7 @@ class WebAppState:
         self.mmproj_path = mmproj_path or str(APP_ROOT / "models" / "mmproj-F16.gguf")
         self.default_visual_reader = default_visual_reader if default_visual_reader in ("on", "off") else "off"
         self._backend_factory = backend_factory
+        self._custom_pdf_loader = pdf_loader is not None
         self._pdf_loader = pdf_loader or (lambda path, max_pages: pdfio.load(path, max_pages=max_pages))
         self.enable_test_seam = enable_test_seam
 
@@ -273,18 +299,28 @@ class WebAppState:
 
     def backend_summary(self) -> dict:
         api_base = os.environ.get("O2J_API_BASE")
+        ocr_mode = "api" if os.environ.get("O2J_OCR_BASE") else "lokalny"
+        model_exists = Path(self.model_path).is_file()
+        api_model = os.environ.get("O2J_API_MODEL", "default")
         if self._backend_factory is not None:
             mode = "test/mock"
             label = getattr(self._backend, "name", "MockExtractor (test)")
         elif api_base:
             mode = "api"
-            label = f"API · {os.environ.get('O2J_API_MODEL', 'default')}"
+            label = f"API · {api_model}"
         else:
             mode = "cpu"
             model_file = Path(self.model_path)
-            exists = model_file.is_file()
-            label = f"CPU · {model_file.stem}" + ("" if exists else " (brak pliku GGUF)")
-        return {"mode": mode, "label": label, "model_path": self.model_path, "threads": self.threads}
+            label = f"CPU · {model_file.stem}" + ("" if model_exists else " (brak pliku GGUF)")
+        return {
+            "mode": mode,
+            "label": label,
+            "api_model": api_model if mode == "api" else None,
+            "model_exists": model_exists,
+            "ocr_mode": ocr_mode,
+            "model_path": self.model_path,
+            "threads": self.threads,
+        }
 
     def list_classes_data(self) -> list[dict]:
         items: list[dict] = []
@@ -399,6 +435,7 @@ class WebAppState:
                     "czas_wczytania_s": rec.get("czas_wczytania_s"),
                     "czas_ekstrakcji_s": rec.get("czas_ekstrakcji_s"),
                     "model": rec.get("model"),
+                    "blad": rec.get("blad"),
                     "trace": rec.get("pola") or [],
                     "data": {} if rec.get("klasa") is None else None,
                 }
@@ -543,14 +580,15 @@ class WebAppState:
 
                 classes = load_classes(self.classes_dir)
                 by_name = {c.name: c for c in classes}
-                max_pages = max(c.pages for c in classes)
                 extract.CHECKSUM_POLICY = job.ocr_checksum
 
                 case_out = resolve_under(self.output_dir, job.case_name)
                 case_out.mkdir(parents=True, exist_ok=True)
 
-                # Etap 1: wczytanie (tekst/OCR) + klasyfikacja
+                # Etap 1: wczytanie pierwszych CLASSIFY_PAGES stron (tekst/OCR) + klasyfikacja;
+                # dalsze strony doczytujemy tylko dla rozpoznanej klasy (zgodnie z cli.read_document).
                 pending = []
+                isolate_read_errors = len(pdfs) > 1
                 for idx, pdf in enumerate(pdfs):
                     if job.cancel_requested:
                         job.status = "cancelled"
@@ -561,8 +599,34 @@ class WebAppState:
                     job.stage = "wczytywanie / OCR i klasyfikacja"
                     rel = Path(job.case_name) / pdf.with_suffix(".json").name
                     t0 = time.perf_counter()
-                    doc = self._pdf_loader(str(pdf), max_pages)
-                    cls_name, scores = classify(doc, classes)
+                    try:
+                        doc = self._pdf_loader(str(pdf), CLASSIFY_PAGES)
+                        cls_name, scores = classify(doc, classes)
+                        if cls_name is not None and not self._custom_pdf_loader:
+                            with pdfio._ENGINE_LOCK:
+                                doc.ensure_pages(by_name[cls_name].pages)
+                            doc.alt_text(pdfio.ALT_DPIS[0], 1)
+                    except Exception as exc:
+                        if not isolate_read_errors:
+                            raise
+                        err_msg = f"{type(exc).__name__}: {exc}"
+                        record = {
+                            "plik": str(pdf),
+                            "skan": False,
+                            "klasa": None,
+                            "punkty_klas": {},
+                            "nieczytelne_linie": 0,
+                            "czas_wczytania_s": round(time.perf_counter() - t0, 2),
+                            "blad": err_msg,
+                        }
+                        out_path = resolve_under(self.output_dir, job.case_name, rel.name)
+                        out_path.parent.mkdir(parents=True, exist_ok=True)
+                        out_path.write_text("{}", encoding="utf-8")
+                        resolve_under(self.trace_dir, job.case_name, f"{rel.stem}.trace.json")
+                        write_trace(self.trace_dir, rel, record)
+                        job.processed_files += 1
+                        job.documents_done.append({"file": pdf.name, "klasa": None, "skipped": True, "error": err_msg})
+                        continue
                     record = {
                         "plik": str(pdf),
                         "skan": doc.is_scan,
@@ -583,12 +647,24 @@ class WebAppState:
                     else:
                         pending.append((cls_name, rel, pdf, doc, record))
 
-                # Etap 2: ekstrakcja pogrupowana klasami
+                # Etap 2: ekstrakcja (w trybie API współbieżnie z ping + fallbackiem; lokalnie sekwencyjnie wg klas)
                 case_results: list[tuple[str, str, dict]] = []
                 case_review: list[dict] = []
                 if pending:
                     job.stage = "inicjalizacja modelu LLM"
                     backend = self.get_backend()
+                    if hasattr(backend, "ping"):
+                        job.stage = "sprawdzanie połączenia z API modelu"
+                        problem = backend.ping()
+                        if problem is not None:
+                            if self._backend_factory is None and Path(self.model_path).is_file():
+                                try:
+                                    job.stage = "API niedostępne — przełączanie na model lokalny CPU"
+                                    backend = LlamaCppBackend(self.model_path, self.threads)
+                                except ImportError:
+                                    raise RuntimeError(problem) from None
+                            else:
+                                raise RuntimeError(problem)
                     extract.VISUAL_READER = None
                     try:
                         if job.visual_reader == "on" and hasattr(backend, "enable_vision") and Path(self.mmproj_path).is_file():
@@ -600,18 +676,34 @@ class WebAppState:
                         extractor = Extractor(backend)
                         t_extract = time.perf_counter()
                         total_pending = len(pending)
-                        for done_idx, (cls_name, rel, pdf, doc, record) in enumerate(
-                            sorted(pending, key=lambda item: (item[0], item[2].name)), 1
-                        ):
-                            if job.cancel_requested:
-                                job.status = "cancelled"
-                                job.stage = "anulowano przez użytkownika"
-                                job.finished_at = time.time()
-                                return
-                            job.current_file = pdf.name
-                            job.stage = f"ekstrakcja ({cls_name})"
+                        parallel = max(1, int(getattr(backend, "parallel", 1)))
+                        isolate_doc_errors = total_pending > 1
+
+                        if parallel > 1 and total_pending > 1:
+                            # PDFium nie jest bezpieczny wątkowo nawet na różnych dokumentach: serializuj ensure_pages()
+                            # tym samym RLockiem, z którego korzysta pdfio.alt_text() (bez modyfikacji pdfio.py).
+                            for _, _, _, doc_obj, _ in pending:
+                                if hasattr(doc_obj, "ensure_pages"):
+                                    orig_ensure = doc_obj.ensure_pages
+
+                                    def _locked_ensure(count: int, _fn=orig_ensure) -> None:
+                                        with pdfio._ENGINE_LOCK:
+                                            return _fn(count)
+
+                                    doc_obj.ensure_pages = _locked_ensure
+
+                        def _process_one(item):
+                            cls_name, rel, pdf, doc, record = item
                             t0 = time.perf_counter()
-                            data, trace, answer = extractor.run(doc, by_name[cls_name])
+                            err_msg = None
+                            try:
+                                data, trace, answer = extractor.run(doc, by_name[cls_name])
+                            except Exception as exc:
+                                if not isolate_doc_errors:
+                                    raise
+                                data, trace, answer = {}, [], ""
+                                err_msg = f"{type(exc).__name__}: {exc}"
+                                record["blad"] = err_msg
                             out_path = resolve_under(self.output_dir, job.case_name, rel.name)
                             out_path.parent.mkdir(parents=True, exist_ok=True)
                             out_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -623,12 +715,67 @@ class WebAppState:
                             )
                             resolve_under(self.trace_dir, job.case_name, f"{rel.stem}.trace.json")
                             write_trace(self.trace_dir, rel, record)
-                            case_results.append((rel.name, cls_name, data))
-                            case_review += review_entries(rel.name, trace)
-                            job.processed_files += 1
-                            remaining = total_pending - done_idx
-                            job.eta_s = ((time.perf_counter() - t_extract) / done_idx) * remaining if remaining > 0 else 0.0
-                            job.documents_done.append({"file": pdf.name, "klasa": cls_name, "skipped": False})
+                            return cls_name, rel, pdf, data, trace, err_msg
+
+                        def _record_done(done_count: int, res) -> None:
+                            cls_name, rel, pdf, data, trace, err_msg = res
+                            if not err_msg:
+                                case_results.append((rel.name, cls_name, data))
+                                case_review.extend(review_entries(rel.name, trace))
+                            with self._jobs_lock:
+                                job.processed_files += 1
+                                remaining = total_pending - done_count
+                                job.eta_s = (
+                                    ((time.perf_counter() - t_extract) / done_count) * remaining
+                                    if remaining > 0
+                                    else 0.0
+                                )
+                                job.documents_done.append({
+                                    "file": pdf.name,
+                                    "klasa": cls_name,
+                                    "skipped": False,
+                                    "error": err_msg,
+                                })
+
+                        ordered = sorted(pending, key=lambda item: (item[0], item[2].name))
+                        if parallel > 1 and total_pending > 1:
+                            job.stage = f"ekstrakcja równoległa API ({min(parallel, total_pending)} naraz)"
+                            done_count = 0
+                            retry_items = []
+                            with ThreadPoolExecutor(max_workers=min(parallel, total_pending)) as pool:
+                                futures = {pool.submit(_process_one, it): it for it in ordered}
+                                for fut in as_completed(futures):
+                                    res = fut.result()
+                                    err_msg = res[5]
+                                    if err_msg and "Model po API nie odpowiada" in err_msg:
+                                        retry_items.append(futures[fut])
+                                    else:
+                                        done_count += 1
+                                        job.current_file = res[2].name
+                                        _record_done(done_count, res)
+                            for it in retry_items:
+                                if job.cancel_requested:
+                                    job.status = "cancelled"
+                                    job.stage = "anulowano przez użytkownika"
+                                    job.finished_at = time.time()
+                                    return
+                                it[4].pop("blad", None)
+                                job.current_file = it[2].name
+                                job.stage = f"ponowienie ({it[0]})"
+                                res = _process_one(it)
+                                done_count += 1
+                                _record_done(done_count, res)
+                        else:
+                            for done_idx, it in enumerate(ordered, 1):
+                                if job.cancel_requested:
+                                    job.status = "cancelled"
+                                    job.stage = "anulowano przez użytkownika"
+                                    job.finished_at = time.time()
+                                    return
+                                job.current_file = it[2].name
+                                job.stage = f"ekstrakcja ({it[0]})"
+                                res = _process_one(it)
+                                _record_done(done_idx, res)
                     finally:
                         extract.VISUAL_READER = None
 

@@ -369,3 +369,119 @@ def test_visual_reader_wiring_and_eta(tmp_path: Path, monkeypatch):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_builtin_yaml_classes_parse_with_new_features():
+    for path in sorted(CLASSES_SRC.glob("*.yaml")):
+        doc_class, summary = parse_class_yaml(path.read_text(encoding="utf-8"))
+        assert doc_class.name == path.stem
+        assert summary["exclude_title_count"] >= 1
+        if doc_class.name == "odwolanie":
+            assert summary["continue_when_empty"]["pages"] == 4
+            all_rules = {r for s in summary["sections"] for f in s["fields"] for r in f["rules"]}
+            assert {"or_from", "wraps", "decide", "line_pattern"}.issubset(all_rules)
+
+    with pytest.raises(ValueError, match="exclude_title"):
+        parse_class_yaml(
+            "name: test\nclassify:\n  exclude_title: ['']\noutput:\n  S:\n    a: {type: string}\n"
+        )
+    with pytest.raises(ValueError, match="or_from"):
+        parse_class_yaml(
+            "name: test\noutput:\n  S:\n    a: {type: string, or_from: ['b']}\n"
+        )
+
+
+def test_parallel_api_backend_and_single_doc_error_isolation(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("O2J_WEB_QUIET", "1")
+    classes_dir = tmp_path / "classes"
+    classes_dir.mkdir()
+    for src in CLASSES_SRC.glob("*.yaml"):
+        (classes_dir / src.name).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+    ping_called = {"n": 0}
+
+    def _parallel_backend_factory():
+        base = _make_mock_backend()
+        orig_complete = base.complete
+        base.parallel = 4
+
+        def _ping():
+            ping_called["n"] += 1
+            return None
+
+        def _complete(system, user, prefill, max_tokens):
+            if "przelew" in user.lower():
+                raise RuntimeError("Symulowany błąd pojedynczego dokumentu")
+            return orig_complete(system, user, prefill, max_tokens)
+
+        base.ping = _ping
+        base.complete = _complete
+        return base
+
+    state = WebAppState(
+        input_dir=tmp_path / "input",
+        output_dir=tmp_path / "output",
+        trace_dir=tmp_path / "trace",
+        classes_dir=classes_dir,
+        cross_checks_path=CROSS_CHECKS_SRC,
+        model_path=str(tmp_path / "missing.gguf"),
+        threads=2,
+        backend_factory=_parallel_backend_factory,
+        pdf_loader=_fake_pdf_loader,
+    )
+    server = create_server("127.0.0.1", 0, state)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{port}"
+        ctype, body = _multipart(
+            {"case_name": "sprawa_api_par"},
+            [
+                ("files", "odwolanie.pdf", b"%PDF-1.7\n%1"),
+                ("files", "przelew.pdf", b"%PDF-1.7\n%2"),
+            ],
+        )
+        code, raw, _ = _req(f"{base}/api/cases/run", "POST", body, {"Content-Type": ctype})
+        assert code == 202
+        job_id = json.loads(raw)["job_id"]
+        for _ in range(100):
+            _, jraw, _ = _req(f"{base}/api/jobs/{job_id}")
+            job = json.loads(jraw)
+            if job["status"] in ("done", "error"):
+                break
+            time.sleep(0.05)
+        assert job["status"] == "done", job
+        assert ping_called["n"] == 1
+
+        code, raw, _ = _req(f"{base}/api/cases/sprawa_api_par")
+        assert code == 200
+        by_stem = {d["stem"]: d for d in json.loads(raw)["documents"]}
+        assert by_stem["odwolanie"]["data"]["OdwolanieKIO"]["czynnosc_powod_id"] == 4
+        assert by_stem["odwolanie"]["blad"] is None
+        assert by_stem["przelew"]["data"] == {}
+        assert "Symulowany błąd pojedynczego dokumentu" in (by_stem["przelew"]["blad"] or "")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_backend_summary_api_mode(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("O2J_API_BASE", "https://api.synaptivo.eu/v1")
+    monkeypatch.setenv("O2J_API_MODEL", "Synaptivo/Synaps-PL-Small-4B")
+    monkeypatch.delenv("O2J_OCR_BASE", raising=False)
+    state = WebAppState(
+        input_dir=tmp_path / "input",
+        output_dir=tmp_path / "output",
+        trace_dir=tmp_path / "trace",
+        classes_dir=CLASSES_SRC,
+        cross_checks_path=CROSS_CHECKS_SRC,
+        model_path=str(tmp_path / "missing.gguf"),
+        threads=2,
+    )
+    summary = state.backend_summary()
+    assert summary["mode"] == "api"
+    assert summary["api_model"] == "Synaptivo/Synaps-PL-Small-4B"
+    assert summary["ocr_mode"] == "lokalny"
+    assert "Synaptivo/Synaps-PL-Small-4B" in summary["label"]
+    assert state.visual_reader_available() is False
