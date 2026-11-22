@@ -4,7 +4,7 @@
 
 ## Ocena wsadowa na VM UZP
 
-Drużyna może otrzymać VM na wniosek. Po przydziale i przygotowaniu maszyny oceniający umieszcza PDF-y w `/opt/solution/input/<sprawa>/`, uruchamia polecenie z `/opt/solution/RUN.md` i pobiera pliki z `/opt/solution/output`. Obraz projektu zawiera Python 3.13 i OCR. Zespół konfiguruje usługę wraz z kluczem w `/opt/solution/.env` przed odcięciem dostępu o 11.00. [Polecenie dla jury](../RUN.md) · [Instrukcja VM UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/VM.md)
+Drużyna otrzymała VM. Polecenie wsadowe w wersji `8889069` przetworzyło tu 30 publicznych skanów w 8 min 31 s z F1 0,9935. Przy ocenie zgłoszenia jury umieszcza PDF-y w `/opt/solution/input/<sprawa>/`, uruchamia polecenie z `/opt/solution/RUN.md` i pobiera pliki z `/opt/solution/output`. Obraz projektu zawiera Python 3.13 i OCR. Zespół konfiguruje usługę wraz z kluczem w `/opt/solution/.env` przed odcięciem dostępu o 11.00. [Polecenie dla jury](../RUN.md) · [Instrukcja VM UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/VM.md)
 
 ## Pokaz interfejsu w Windows
 
