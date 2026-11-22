@@ -26,7 +26,7 @@ Projekt: **JSON, ja tu tylko parsuję** · wyzwanie: [UZP] Odwołania2JSON
 | 12 | **What's done so far and goal of your project** | tekst długi | Co zrobiono przed wydarzeniem i co planujecie zrobić w trakcie; jeśli projekt był rozwijany wcześniej, napiszcie co | ✅ Na koniec zaktualizować o wyniki (F1 na skanach) |
 | 13 | **Team status** | wybór: *Looking for team members* / *Full team* | Czy zespół jest pełny | ✅ Full team |
 | 14 | **Needed skills** | checkboxy | Jakich umiejętności szukacie | Bez znaczenia przy pełnym zespole |
-| 15 | **Your video presentation** | URL YouTube (publiczny albo niepubliczny, „Listed”) | Film promocyjny projektu. Wrzucić na YouTube jako *Listed* i wkleić link (https://...) | ✅ https://www.youtube.com/watch?v=w3GdFEV3hNI |
+| 15 | **Your video presentation** | URL YouTube (publiczny albo niepubliczny, „Listed”) | Film promocyjny projektu. Wrzucić na YouTube jako *Listed* i wkleić link (https://...) | ➕ Zalecane przez organizatora |
 | 16 | **Website** | URL | Link do innych zasobów, np. strony | Opcjonalnie |
 | 17 | **[Opcjonalne] Instrukcje jak otworzyć projekt** | tekst długi | Instrukcje, dzięki którym jurorzy szybko uruchomią projekt | Gotowy tekst jest w [drafcie do formularza](./DRAFT-HACKTRIBE.md#instrukcja-uruchomienia-do-pola-17). [Polecenie na maszynie UZP](../RUN.md) |
 | 18 | **[Opcjonalne] Prezentacja** | plik PDF, maks. 10 MB | Prezentacja projektu | Pole ma oznaczenie opcjonalne. W przewodniku organizator prosi o finałową prezentację w PDF do 10 MB. [Gotowy PDF](./Odwolania2JSON-prezentacja.pdf) · [Przewodnik, s. 6](https://hacknation.pl/api/public/przewodnik/1f73a661-0852-4e9e-b3ed-58c93bce6456?asset=aa346c52-8bd9-44ac-9499-364e44c4b6b4) |
@@ -41,5 +41,5 @@ Projekt: **JSON, ja tu tylko parsuję** · wyzwanie: [UZP] Odwołania2JSON
 - [ ] Uzupełnić instrukcję uruchomienia (pole 17)
 - [ ] Wgrać prezentację PDF ≤ 10 MB (pole 18)
 - [ ] Opcjonalnie dodać okładkę 800×600 (pole 10)
-- [x] Opcjonalnie: wideo na YouTube jako *Listed* (pole 15)
+- [ ] Opcjonalnie: wideo na YouTube jako *Listed* (pole 15)
 - [ ] Zaktualizować „What's done so far” o końcowe wyniki

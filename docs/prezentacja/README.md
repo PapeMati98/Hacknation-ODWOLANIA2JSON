@@ -2,7 +2,7 @@
 
 **Drużyna „Nie wiem, ale wygeneruję”** pokazuje, jak z potwierdzenia przelewu w PDF uzyskać sześć pól w JSON i jak dodać do aplikacji kolejną klasę dokumentów.
 
-[Prezentacja PDF do HackTribe](../Odwolania2JSON-prezentacja.pdf) · [Film 45 s na YouTube](https://www.youtube.com/watch?v=w3GdFEV3hNI) · [Edytowalny PowerPoint z notatkami do sześciu slajdów](./Odwolania2JSON.pptx) · [Uruchomienie dla jury](../INSTRUKCJA-JURY.md)
+[Prezentacja PDF do HackTribe](../Odwolania2JSON-prezentacja.pdf) · [Edytowalny PowerPoint z notatkami do sześciu slajdów](./Odwolania2JSON.pptx) · [Uruchomienie dla jury](../INSTRUKCJA-JURY.md)
 
 ## Przygotowanie pokazu
 
