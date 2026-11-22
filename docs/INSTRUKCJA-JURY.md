@@ -1,18 +1,22 @@
 # ODWOŁANIA2JSON. Uruchomienie dla jury UZP
 
-**Drużyna „NIe wiem, ale wygeneruje”.** Aplikacja obsługuje elektroniczne PDF-y i skany. Do ekstrakcji używa Synaps-PL Small 4B, polskiego modelu językowego z rodziny Synaps opracowanego przez Synaptivo. **Stan na 21 listopada.** Konkursowe API przeszło próbę przez publiczny adres z kluczem jury. W próbie aplikacja obsłużyła 30 publicznych skanów UZP w 2 min 44 s. Do opisanej poniżej próby w Windows zainstaluj Python 3.13 z programem uruchamiającym `py`. Skrypt interfejsu wywołuje `py -3.13` przy tworzeniu środowiska. Potrzebujesz również połączenia z usługą modelu. Pierwsze uruchomienie pobiera zależności. [Publiczna karta modelu](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B)
+**Drużyna „NIe wiem, ale wygeneruje”.** Aplikacja odczytuje PDF-y tekstowe i skany. Korzysta z Synaps-PL Small 4B, polskiego modelu językowego z rodziny Synaps opracowanego przez Synaptivo. Publiczna próba z 21 listopada objęła 30 skanów UZP i trwała 2 min 44 s. [Karta modelu](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B)
 
-## Dostęp do modelu
+## Ocena wsadowa na VM UZP
 
-Adres API to `https://api.synaptivo.eu/v1`, a identyfikator modelu to `Synaptivo/Synaps-PL-Small-4B`. Klucz do testów zespół przekazuje jury w formularzu zgłoszeniowym. W PowerShell otwórz katalog zawierający `start_ui.bat` i `requirements.txt`, wykonaj poniższe polecenia i wpisz klucz w ukrytym polu. Ustawienia dotyczą bieżącej konsoli i uruchamianych z niej procesów.
+Drużyna może otrzymać VM na wniosek. Po przydziale i przygotowaniu maszyny oceniający umieszcza PDF-y w `/opt/solution/input/<sprawa>/`, uruchamia polecenie z `/opt/solution/RUN.md` i pobiera pliki z `/opt/solution/output`. Obraz projektu zawiera Python 3.13 i OCR. Zespół konfiguruje usługę wraz z kluczem w `/opt/solution/.env` przed odcięciem dostępu o 11.00. [Polecenie dla jury](../RUN.md) · [Instrukcja VM UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/VM.md)
+
+## Pokaz interfejsu w Windows
+
+Dotychczasowy pomiar wykonaliśmy pod adresem `https://api.synaptivo.eu/v1` z modelem `Synaptivo/Synaps-PL-Small-4B`. Pomiar dokumentuje próbę na publicznych przykładach. Do dokumentów oceny zespół musi wskazać adres usługi z potwierdzoną lokalizacją przetwarzania i przyjętą polityką prywatności. Do pokazu na publicznych przykładach w Windows użyj adresu i klucza przekazanych przez zespół. Zalecany jest Python 3.13 z programem `py`. Z katalogu z `start_ui.bat` wykonaj polecenia w PowerShell i wpisz klucz w ukrytym polu. Ustawienia obowiązują w bieżącej konsoli i jej procesach.
 
 ```powershell
-$env:O2J_API_BASE = 'https://api.synaptivo.eu/v1'
+$env:O2J_API_BASE = Read-Host 'Adres API przekazany przez zespół, z końcówką /v1'
 $env:O2J_API_MODEL = 'Synaptivo/Synaps-PL-Small-4B'
 $env:O2J_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'Klucz jury' -AsSecureString)).Password
 ```
 
-W konfiguracji konkursowej OCR działa na komputerze oceniającego. Pozostaw `O2J_OCR_BASE` nieustawione. Plik PDF i obrazy stron pozostają na tym komputerze. Do API Synapsa trafiają tekst oraz pola potrzebne do odczytu wartości. Przed oceną zespół przekaże adres obowiązującej polityki dostawcy. [Projekt polityki dla API Synaps](./POLITYKA-PRYWATNOSCI-API-SYNAPS.md)
+Przy lokalnym OCR pozostaw `O2J_OCR_BASE` nieustawione. PDF-y i obrazy stron pozostają w środowisku oceny. Do API trafiają tekst i pola formularza. Obecna strona dostawcy zapowiada publikację polityki, a dotychczasowa brama nie gwarantuje miejsca odszyfrowania w UE/EOG. [Strona dostawcy](https://synaptivo.eu/polityka-prywatnosci/) [Projekt polityki API Synaps](./POLITYKA-PRYWATNOSCI-API-SYNAPS.md)
 
 ## Pierwsza próba
 
@@ -28,4 +32,4 @@ Umieść PDF-y w podkatalogach spraw w `input`, np. `input/sprawa_02/przelew.pdf
 .\start.bat --input .\input --output .\output --trace .\trace
 ```
 
-Wynik przykładu trafi do `output/sprawa_02/przelew.json`. Ślad ekstrakcji i pola do sprawdzenia znajdują się w `trace`. W razie komunikatu o przełączeniu na lokalny GGUF sprawdź adres, nazwę modelu i ważność klucza przed pomiarem czasu Synapsa. Na czas oceny całej partii UZP przeznacza 45 minut na 150 PDF-ów. [Zasady UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/0b360a9da4b482a6a280696df6714404e0953505/README.md)
+Wynik przykładu trafi do `output/sprawa_02/przelew.json`. Ślad ekstrakcji i pola do sprawdzenia znajdują się w `trace`. W razie komunikatu o przełączeniu na lokalny GGUF sprawdź adres, nazwę modelu i ważność klucza przed pomiarem czasu Synapsa. Na czas oceny całej partii UZP przeznacza 45 minut na 150 PDF-ów. [Zasady UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/README.md)

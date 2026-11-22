@@ -11,9 +11,11 @@ Rozwiązanie zadania **Odwołania2json** (Urząd Zamówień Publicznych, HackNat
 
 ## Uruchomienie
 
+Po przydziale i przygotowaniu maszyny UZP polecenie dla jury znajduje się w `/opt/solution/RUN.md`. Czyta pliki z `input`, zapisuje wyniki w `output` i korzysta z API skonfigurowanego w `.env`. [Instrukcja oceny na VM](./RUN.md)
+
 ### Przykład dla jury
 
-Z kluczem z formularza zgłoszeniowego ustaw adres publicznego API i nazwę modelu zgodnie z [instrukcją jury](./docs/INSTRUKCJA-JURY.md). W PowerShell uruchom `.\start_ui.bat` i otwórz `http://127.0.0.1:8080`. Wgraj plik `przelew.pdf` ze sprawy `przyklad_02`, uruchom ekstrakcję i pobierz `przelew.json`. Sześć pól można porównać z plikiem o tej samej nazwie u organizatora. Przycisk „Pobierz ZIP sprawy” pobiera wszystkie wyniki. [Przykład i wzorzec UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/tree/0b360a9da4b482a6a280696df6714404e0953505/dane/przyklad_02) · [Prezentacja projektu (PDF)](./docs/Odwolania2JSON-prezentacja.pdf) · [Materiały do wystąpienia, PowerPoint i przykład do demo](./docs/prezentacja/README.md) · [Treść zgłoszenia HackTribe](./docs/DRAFT-HACKTRIBE.md)
+Do pokazu interfejsu w Windows ustaw uzgodniony adres API i nazwę modelu zgodnie z [instrukcją jury](./docs/INSTRUKCJA-JURY.md). W PowerShell uruchom `.\start_ui.bat` i otwórz `http://127.0.0.1:8080`. Wgraj plik `przelew.pdf` ze sprawy `przyklad_02`, uruchom ekstrakcję i pobierz `przelew.json`. Sześć pól można porównać z plikiem o tej samej nazwie u organizatora. Przycisk „Pobierz ZIP sprawy” pobiera wszystkie wyniki. [Przykład i wzorzec UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/tree/0b360a9da4b482a6a280696df6714404e0953505/dane/przyklad_02) · [Prezentacja projektu (PDF)](./docs/Odwolania2JSON-prezentacja.pdf) · [Materiały do wystąpienia, PowerPoint i przykład do demo](./docs/prezentacja/README.md) · [Treść zgłoszenia HackTribe](./docs/DRAFT-HACKTRIBE.md)
 
 ### Wariant lokalny z Qwenem
 

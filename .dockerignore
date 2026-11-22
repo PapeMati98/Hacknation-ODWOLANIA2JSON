@@ -1,4 +1,6 @@
 .venv
+.env
+api.env
 .git
 models
 input

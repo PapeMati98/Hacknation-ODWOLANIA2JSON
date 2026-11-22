@@ -1,6 +1,6 @@
 # ODWOŁANIA2JSON. Ustalenia UZP i wybór modelu
 
-**21 listopada 2026, czas polski.** Drużyna **NIe wiem, ale wygeneruje** wybrała **Synaps-PL Small 4B**, polski model językowy z rodziny Synaps opracowany przez Synaptivo. W konkursie używamy wydania S1. Publiczne API przeszło próbę z kluczem jury. Adres i identyfikator modelu zawiera [instrukcja uruchomienia](./INSTRUKCJA-JURY.md). Wcześniejsze próby lokalne używały aliasu `synaps-pl-4b-s1`. Punkt odniesienia dla konkursu stanowi [README UZP w wersji 0b360a9 z godz. 19.36](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/0b360a9da4b482a6a280696df6714404e0953505/README.md).
+**22 listopada 2026, czas polski.** Drużyna **NIe wiem, ale wygeneruje** wybrała **Synaps-PL Small 4B**, polski model językowy z rodziny Synaps opracowany przez Synaptivo. W konkursie używamy wydania S1. Publiczne API przeszło próbę z kluczem jury. Adres i identyfikator modelu zawiera [instrukcja uruchomienia](./INSTRUKCJA-JURY.md). Wcześniejsze próby lokalne używały aliasu `synaps-pl-4b-s1`. Bieżące wymagania określają [README UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/README.md) i [instrukcja VM](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/VM.md).
 
 ## Odpowiedzi UZP na Discordzie
 
@@ -20,13 +20,13 @@ Ta część obejmuje odpowiedzi utrwalone w projekcie do godz. 16.23. Dowód wsk
 
 | Obszar | Co będzie oceniane |
 |---|---|
-| Czas | **150 PDF-ów w maksymalnie 45 minut** dla całego zbioru. Odpowiada to średnio 18 s na PDF. Organizator zapowiedział zmianę sposobu przeprowadzania oceny. Aktualna wersja nie określa modelu procesora ani wielkości RAM. |
+| Czas | UZP przeznacza 45 minut na 150 PDF-ów. Dla VM wskazuje Ubuntu 24.04, 2 vCPU, 16 GB RAM, 64 GB dysku i brak GPU. Czas na maszynie zespołu i czas na rzeczywistej VM są odrębnymi pomiarami. |
 | Punktacja | W preselekcji F1 ma wagę 100%. W finale jakość i elastyczność mają po 50%. UZP zachował zakres 1–20 pkt za model, 1–20 pkt za rozszerzalność i 1–10 pkt za dodatkowe funkcje. Szczegóły punktacji LLM są w opracowaniu. O godz. 19.27 organizator wycofał wcześniejszą tabelę progów i zapis o 20 pkt za wariant lokalny. O godz. 19.36 zapowiedział zmianę organizacji testów. |
 | API i składniki | Aplikacja działa lokalnie bez GPU, model może działać przez firmowe API z kluczem dla jury. Obowiązują otwarte komponenty, w tym model językowy. OCR może działać lokalnie lub przez API. Przy OCR przez API organizator uwzględni parametry modelu OCR w ocenie. |
-| Uruchomienie i pliki | Python 3.13+, `requirements.txt` i uruchomienie skryptem. Wynik zachowuje nazwę bazową PDF i podkatalog sprawy w `output/`. Dla dokumentu spoza klas organizator wymaga pustego JSON. |
+| Uruchomienie i pliki | Python 3.13+, `requirements.txt`. Na VM organizatora systemowy Python to 3.12, obraz projektu ma 3.13. Po 11.00 jury uruchamia komendę z `/opt/solution/RUN.md`, która czyta `/opt/solution/input` i zapisuje `/opt/solution/output`. Zespół wcześniej ustawia klucz w `/opt/solution/.env` oraz przygotowuje obraz i OCR. |
 | Materiały do oddania | Tytuł i link GitHub do działającego prototypu, w którym można wgrać PDF i odczytać wynik. Instrukcja HackTribe przewiduje zamknięcie zgłoszeń 22 listopada o 11.00 i dołączenie prezentacji PDF do 10 MB. |
 
-Źródła wymagań to [README UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/0b360a9da4b482a6a280696df6714404e0953505/README.md), [historia zmiany punktacji i warunków testu](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/compare/a48d25b...0b360a9da4b482a6a280696df6714404e0953505) oraz [przewodnik HackNation](https://hacknation.pl/api/public/przewodnik/1f73a661-0852-4e9e-b3ed-58c93bce6456?asset=aa346c52-8bd9-44ac-9499-364e44c4b6b4).
+[Bieżące warunki UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/README.md) · [Instrukcja maszyny](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/eadffbce531eeac876d0f7e62c1cc6e857b05796/VM.md) · [Przewodnik HackNation](https://hacknation.pl/przewodnik-uczestnika)
 
 ## Synaps w zgłoszeniu
 
@@ -45,4 +45,6 @@ W próbie `api-s1-v5` na 30 skanach uzyskano 306 trafień, 2 wyniki nadmiarowe i
 
 **Otwarte wagi potwierdzone.** Publiczne wydanie `Synaptivo/Synaps-PL-Small-4B`, rewizja `67e30d0`, ma dwa pliki wag, kartę i licencję Apache 2.0. Metadane Hugging Face wskazują bazę `Qwen/Qwen3.5-4B`. Kartę, licencję i listę wag sprawdzono anonimowo. [Karta modelu wskazana przez Mateusza](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B) · [Pliki wydania 67e30d0](https://huggingface.co/Synaptivo/Synaps-PL-Small-4B/tree/67e30d038b23acb894e877fb6533e25d82afc86a)
 
-**Dostęp do API i stan polityki.** 21 listopada Claude sprawdził publiczny adres przez Cloudflare Tunnel, bramę Synaptivo i serwer modelu w Polsce. Bez klucza odnotował HTTP 401. Z kluczem jury 30 publicznych skanów UZP przetworzono w 164 s z F1 0,9935. Mateusz zaakceptował przedstawiony projekt polityki w wersji 0e428bb. Przed publikacją wymagają uzupełnienia m.in. region odszyfrowania połączeń, lokalizacja i retencja logów, zasady dalszego wykorzystania oraz informacje administratora danych. [Projekt polityki i karta potwierdzeń](./POLITYKA-PRYWATNOSCI-API-SYNAPS.md) · [Strona polityki Synaptivo](https://synaptivo.eu/polityka-prywatnosci/) · [Wymagania UZP](https://github.com/Urzad-Zamowien-Publicznych/hacknation-2026/blob/0b360a9da4b482a6a280696df6714404e0953505/README.md?plain=1#L160)
+**Dostęp do API i stan polityki.** W publicznej próbie z 21 listopada na 30 skanach uzyskano F1 0,9935 w 164 s. 22 listopada bez klucza serwer zwrócił HTTP 401. Według operatora model działa w Polsce, Cloudflare Free odszyfrowuje ruch bez gwarancji regionu, a Logpush jest wyłączony. Miejsca przetwarzania i retencji logów tej usługi nie potwierdzono. Strona spółki zapowiada publikację. [Projekt polityki API](./POLITYKA-PRYWATNOSCI-API-SYNAPS.md) · [Strona spółki](https://synaptivo.eu/polityka-prywatnosci/)
+
+**Nocna próba odporności.** Na 43 trudnych PDF-ach z zestawu zespołu wykorzystanego do poprawek uzyskano F1 0,974 (392 TP, 13 FP, 8 FN) dla `ed312e1`. Wszystkie 22 osobne orzeczenia KIO dostały `{}`. Wynik na 36 odłożonych dokumentach, F1 0,9938 w 31 s, pochodzi z wcześniejszej wersji `1800d25`. [Zbiór zespołu](../eval/trudne)
